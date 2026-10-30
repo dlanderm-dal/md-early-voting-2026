@@ -36,6 +36,8 @@
   Re-synced Oct. 29 with live version 180: text, popup, footer, colors and numbers already matched. Inline data
     replaced with voting_methods_flourish.csv (the fresh fact check, identical to live), whose Category values are the
     published panel names, so PANELS / PANEL_TITLES now use "Mail-in voting" and "Early in-person voting" directly.
+  CHANGED Oct. 30 (David): clicking a bar segment pins its popup open, like Flourish (stays through mouse moves and
+    switching windows/apps; click it again or anywhere outside the popup to close; resizing the page closes it).
   Font: Flourish uses "Canva Sans Variable" (not free to load); this uses Source Sans 3.
   Data: full_pia/output/voting_methods_flourish.csv (early_voting_factcheck_self.Rmd, graphic 7 export), inline below.
     To refresh after rerunning that chunk:
@@ -79,6 +81,7 @@
     background: #fff; border-radius: 0.2rem; padding: 7px; width: 300px; max-width: calc(100vw - 22px); box-sizing: content-box;  /* live content box: 300px + 7px padding a side (popup_width) */
     box-shadow: 0 2px 10px rgba(0,0,0,.2); font-family: var(--font); text-align: start;
   }
+  .tooltip.pinned { pointer-events: auto; }   /* a pinned popup can be clicked and its text selected */
   #chart rect.seg { cursor: pointer; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
@@ -328,9 +331,22 @@ function showTip(event, row, series) {
   y = Math.max(window.scrollY + edge, y);
   tip.style("left", x + "px").style("top", y + "px");
 }
-const hideTip = () => tip.style("display", "none");
-// Phones: tapping anywhere that isn't a bar closes the popup
-document.addEventListener("click", e => { if (!(e.target instanceof SVGGeometryElement && e.target.classList.contains("seg"))) hideTip(); });
+// Clicking a segment pins its popup open, like Flourish: it stays put (same place, same info) while the mouse moves,
+// leaves the chart, or the viewer switches to another window or app. Click the same segment again, or anywhere
+// outside the popup, to close it; clicking another segment moves the pinned popup there.
+let pinned = null;                                                  // the segment whose popup is pinned (null = popup follows the mouse)
+const hideTip = () => { if (!pinned) tip.style("display", "none"); };   // mouse leaving a segment: ignored while pinned
+function unpin() { pinned = null; tip.classed("pinned", false).style("display", "none"); }
+function pinTip(event, row, series) {
+  if (pinned === event.currentTarget) { unpin(); return; }         // second click on the same segment closes it
+  pinned = event.currentTarget;
+  showTip(event, row, series);
+  tip.classed("pinned", true);
+}
+document.addEventListener("click", e => {
+  if (tip.node().contains(e.target)) return;                       // clicks inside the pinned popup keep it open
+  if (!(e.target instanceof SVGGeometryElement && e.target.classList.contains("seg"))) unpin();   // anywhere else closes it
+});
 rows.forEach(r => { r.total = d3.sum(SERIES, s => r[s]); });     // computed here, so the labels can't drift from the bars
 const byPanel = d3.group(rows, r => r.Category);
 // % change in each panel's total, 2022 to 2026 (shown after the 2026 total)
@@ -420,9 +436,9 @@ function draw() {
         .attr("class", "seg")
         .attr("fill", d => COLORS[d.key])
         .attr("stroke", "#fff").attr("stroke-width", 1)                   // Flourish leaves a thin white gap between segments
-        .on("mousemove", (e, d) => showTip(e, r, d.key))                  // popup: hover a party's segment...
+        .on("mousemove", (e, d) => { if (!pinned) showTip(e, r, d.key); })   // popup: hover a party's segment...
         .on("mouseleave", hideTip)
-        .on("click", (e, d) => showTip(e, r, d.key));                     // ...or tap it on phones
+        .on("click", (e, d) => pinTip(e, r, d.key));                       // ...or click/tap it to pin the popup open
 
       const end = g.append("text").attr("x", x(r.total) + endGap).attr("y", by + barH / 2).attr("dy", "0.35em")
         .attr("font-size", small);
@@ -468,7 +484,7 @@ function draw() {
 }
 
 let lastW = 0;
-new ResizeObserver(() => { const w = document.getElementById("chart").clientWidth; if (w !== lastW) { lastW = w; draw(); } })
+new ResizeObserver(() => { const w = document.getElementById("chart").clientWidth; if (w !== lastW) { lastW = w; unpin(); draw(); } })
   .observe(document.getElementById("chart"));
 if (document.fonts) document.fonts.ready.then(draw);   // re-measure label widths once the web font is in
 
