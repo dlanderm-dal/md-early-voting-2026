@@ -47,6 +47,8 @@
     are Claude's drafts (Oct. 28), kept because live's subtitle is factually wrong; every number checked against the data.
   CHANGED Oct. 30 (David): clicking a bar segment pins its popup open, like Flourish (stays through mouse moves and
     switching windows/apps; click it again or anywhere outside the popup to close; resizing the page closes it).
+  CHANGED Oct. 30 (David): popup labels made clear about whole-district vs. party numbers: "Total district change" label
+    over the big purple % change, "of the district's {{Year}} votes" (the bar's own year) and "Who cast the added votes in 2026".
   Font: Source Sans 3 (Flourish's Canva Sans Variable isn't free to load).
   Re-synced Oct. 29 with live version 98: title, subtitle, footer, axis title and popup already matched; the only change
     in Flourish was the data (Olszewski's name now has its quotes: John "Johnny O" Olszewski, Jr.). Inline data replaced
@@ -136,19 +138,20 @@
 
   <!-- The hovered party's early in-person votes in this bar's year (only the hovered party's box shows) -->
   <div class="g9h g9h-dem" style="align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:8px 10px; background:#f8f8f6; border-left:4px solid #1979b9; border-radius:4px">
-    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#1979b9">Democrats</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Democratic share (popup)}} of the</span> <span style="white-space:nowrap">district's votes</span></div></div>
+    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#1979b9">Democrats</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Democratic share (popup)}} of the</span> <span style="white-space:nowrap">district's {{Year}} votes</span></div></div>
     <div style="flex:none; font-size:28px; line-height:1; font-weight:800; color:#1a1a1a; white-space:nowrap">{{Democratic (popup)}}</div>
   </div>
   <div class="g9h g9h-rep" style="align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:8px 10px; background:#f8f8f6; border-left:4px solid #c71e1d; border-radius:4px">
-    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#c71e1d">Republicans</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Republican share (popup)}} of the</span> <span style="white-space:nowrap">district's votes</span></div></div>
+    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#c71e1d">Republicans</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Republican share (popup)}} of the</span> <span style="white-space:nowrap">district's {{Year}} votes</span></div></div>
     <div style="flex:none; font-size:28px; line-height:1; font-weight:800; color:#1a1a1a; white-space:nowrap">{{Republican (popup)}}</div>
   </div>
   <div class="g9h g9h-oth" style="align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:8px 10px; background:#f8f8f6; border-left:4px solid #faa916; border-radius:4px">
-    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#faa916">Other</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Other share (popup)}} of the</span> <span style="white-space:nowrap">district's votes</span></div></div>
+    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#faa916">Other</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Other share (popup)}} of the</span> <span style="white-space:nowrap">district's {{Year}} votes</span></div></div>
     <div style="flex:none; font-size:28px; line-height:1; font-weight:800; color:#1a1a1a; white-space:nowrap">{{Other (popup)}}</div>
   </div>
 
-  <div style="display:flex; align-items:center; gap:10px; margin:8px 0 10px; padding:9px 10px; background:#f8f8f6; border-radius:6px">
+  <div style="display:flex; flex-wrap:wrap; align-items:center; gap:5px 10px; margin:8px 0 10px; padding:8px 10px 9px; background:#f8f8f6; border-radius:6px">
+    <div style="flex:0 0 100%; text-align:center; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555">Total district change</div>
     <div style="flex:0 0 auto; text-align:center">
       <div style="font-size:28px; line-height:1; font-weight:800; white-space:nowrap">{{District change (popup)}}</div>
       <div style="font-size:12px; color:#555; margin-top:4px">vs. 2022</div>
@@ -159,7 +162,7 @@
     </div>
   </div>
 
-  <div style="margin-top:8px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555">Who cast the added votes</div>
+  <div style="margin-top:8px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555">Who cast the added votes in 2026</div>
   <div style="margin:3px 0 4px">{{New votes bar (popup)}}</div>
   <div class="g9d-row g9d-dem"><span style="flex:none; width:9px; height:9px; background:#1979b9; border-radius:1px"></span><span style="flex:1"><span style="color:#1979b9">Democrats</span></span><span style="white-space:nowrap">{{Democratic vote change (popup)}}</span><span style="width:32px; text-align:right">{{Democratic share of new votes (popup)}}</span></div>
   <div class="g9d-row g9d-rep"><span style="flex:none; width:9px; height:9px; background:#c71e1d; border-radius:1px"></span><span style="flex:1"><span style="color:#c71e1d">Republicans</span></span><span style="white-space:nowrap">{{Republican vote change (popup)}}</span><span style="width:32px; text-align:right">{{Republican share of new votes (popup)}}</span></div>
