@@ -12,7 +12,7 @@ Numbered in the order they appear in the article.
 
 | # | Graphic | What it shows | Table in `output/` |
 |---|---|---|---|
-| 1 | [Early voting spikes in Maryland](https://dlanderm-dal.github.io/md-early-voting-2026/table_1_stacked_bars_d3.html) (D3) | Mail-in, early in-person and combined votes by party, seven days before Election Day, 2022 vs. 2026 | `voting_methods_flourish.csv`, `methods_table_factcheck.csv` |
+| 1 | [One Week Out: Early voting spikes in Maryland](https://dlanderm-dal.github.io/md-early-voting-2026/table_1_stacked_bars_d3.html) (D3) | Mail-in, early in-person and combined votes by party, seven days before Election Day, 2022 vs. 2026 | `voting_methods_flourish.csv`, `methods_table_factcheck.csv` |
 | 2 | [Who accounts for the jump in early voting in Maryland?](https://public.flourish.studio/visualisation/30737421/) (Flourish table) | Each party's share of the change in votes from 2022 to 2026, by voting method | `methods_party_change_flourish.csv`, `methods_party_change_table.csv` |
 | 3 | [Marylanders increasingly utilizing methods of voting before election day](https://public.flourish.studio/visualisation/30731131/) (Flourish line chart) | Running totals of mail-in, early in-person and combined votes from 16 to 5 days before Election Day, 2022, 2024 and 2026 | `early_voting_time_domain_graphic.csv`, `daily_wide.csv`, `mail_daily.csv` |
 | 4 | [Congressional districts all see spike in early in-person voting](https://dlanderm-dal.github.io/md-early-voting-2026/section_5_districts_stacked_bars_d3.html) (D3) | Early in-person votes by party in each of Maryland's eight congressional districts, seven days out, with the 2026 candidates | `in_person_congressional_flourish.csv`, `cd_table_factcheck.csv` |
