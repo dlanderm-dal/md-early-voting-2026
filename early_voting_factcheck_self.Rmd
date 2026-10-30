@@ -1098,3 +1098,25 @@ early_voting_time_domain_graphic
 ```
 
 
+
+```{r}
+# ---- Graphic 4: mail-in ballots received by county, the day before early in-person voting started ----
+# Oct. 26, 2022 vs. Oct. 21, 2026 (both 13 days before Election Day, as of 6 PM). These are the same two reports as
+# mail_2022_10_26 and mail_2026_10_21 above, but this time the 24 county rows are kept, not just the Total row.
+county_mail_2022_raw <- read_excel("supplemental_reports/absentee_ballots_20221027.xlsx", col_names = FALSE)                          # as of Oct. 26, 2022 (Willis)
+county_mail_2026_raw <- read_excel("Press Reports-selected/2026/GG26/10222026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)  # as of Oct. 21, 2026
+
+county_mail_2022 <- county_mail_2022_raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>   # header (row 6) + the ALL table: 24 counties and "Total"
+  transmute(county_name, total_2022 = as.numeric(total_received))                           # keep the county and its ballots received, as a number
+
+county_mail_2026 <- county_mail_2026_raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  transmute(county_name, total_2026 = as.numeric(total_received))
+
+# Side by side, with the change: 24 counties, then the report's statewide "Total" row
+pre_in_person_early_table <- full_join(county_mail_2022, county_mail_2026, by = "county_name") |>
+  mutate(difference = total_2026 - total_2022,                          # how many more (or fewer) ballots in 2026
+         pct_change = round(difference / total_2022 * 100, 1))          # % change: (2026 - 2022) / 2022 x 100
+pre_in_person_early_table
+```
