@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Early voting spikes in Maryland</title>
+<!--
+  BUILD NOTES
+  D3 rebuild of Flourish visualisation 30729236 (graphic 7), published version 84, template
+  "Line, bar and pie charts" v42 (id 119604), stacked bars in a 1-column grid of charts by Category.
+  Copied Oct. 28, 2026 (re-synced with version 113). D3 7.9.0 (pinned, cdnjs). No buttons.
+  CHANGED Oct. 29 (David): added live graphic 7's custom popup (popup.popup_custom_main, pasted as-is; hover a bar
+    segment, or tap on phones; same popup card and behavior as 9-D3), and party shares are no longer printed
+    above/below the bars (they're in the popup).
+  TEXT MATCHED TO LIVE Oct. 29 (David): subtitle "...combined early voting is up 30.9%" and axis title "Received Ballots"
+    (the Oct. 28 wording changes below are undone). Title, panel titles, legend and footer already matched.
+  Kept from Flourish: title, subtitle, legend, the three panels (Mail-in / Early voting / Combined),
+    2022 and 2026 bars, stack order Democratic | Republican | Other, CNS colors, the bar-end totals,
+    the shared 0-800,000 axis, the footer note and CNS logo.
+  Changed on purpose (David, Oct. 28): no Mail-in / Early voting / Combined buttons; each party's share
+    of the bar printed outside it, smaller (above the 2022 bar, below the 2026 bar, Oct. 28);
+    Other in CNS orange-yellow (#faa916); the change drawn one of four ways (CHANGE_STYLE, or ?change= in the URL);
+    the change from 2022 after each 2026 total; thinner bars; axis labels flat, not angled (CNS rule).
+  Wording changes (David, Oct. 28): subtitle says the 30.9% is mail-in and early in-person combined;
+    axis title "Ballots and votes" instead of "Received Ballots".
+  Mirrored from David's Flourish edits (version 113, Oct. 28): gridlines off; flat axis labels, no tick marks,
+    4 ticks; footer date "Oct. 27, 2026".
+  Re-synced Oct. 29 with live version 143 (the brief said 132; the live chart had moved on to 143).
+    Changed to match: panel titles "Mail-in voting" and "Early in-person voting" (David renamed the
+    Category values in Flourish; the CSV still says "Mail-in" / "Early voting", so PANEL_TITLES maps them).
+    Checked and already matching: title, legend order (Republican, Democratic, Other), colors, stack order,
+    bar-end total format (308,580), 0-800,000 axis with 4 ticks, footer note, source line and CNS logo.
+    Kept on purpose: our subtitle (live now reads "...combined early voting is up 30.9%", which agrees
+    with ours) and axis title "Ballots and votes" (live still "Received Ballots"); no faint axis lines
+    (Flourish draws a light gray baseline and left edge). Inline data refreshed from the CSV (no changes).
+  Re-synced Oct. 29 with live version 180: text, popup, footer, colors and numbers already matched. Inline data
+    replaced with voting_methods_flourish.csv (the fresh fact check, identical to live), whose Category values are the
+    published panel names, so PANELS / PANEL_TITLES now use "Mail-in voting" and "Early in-person voting" directly.
+  Font: Flourish uses "Canva Sans Variable" (not free to load); this uses Source Sans 3.
+  Data: full_pia/output/voting_methods_flourish.csv (early_voting_factcheck_self.Rmd, graphic 7 export), inline below.
+    To refresh after rerunning that chunk:
+    python3 -I ~/.claude/skills/flourishtod3/scripts/inject_data.py "table_1_stacked_bars_d3.html" "full_pia/output/voting_methods_flourish.csv"
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<style>
+  :root {
+    --font: "Source Sans 3", system-ui, sans-serif;  /* layout.body_font (Flourish: Canva Sans Variable) */
+    --text: #333333;                                  /* measured: every text part is rgb(51,51,51) */
+    --bg: #ffffff;
+    --change: #80217f;                                /* CNS purple, same as the % change in graphics 2, 4 and 6 popups */
+    /* Desktop sizes, measured at 700px wide */
+    --title: 28px;     --title-lh: 1.2;               /* layout.title: 28px / 700 / 33.6px */
+    --subtitle: 19.6px; --subtitle-lh: 1.2;           /* layout.subtitle: 19.6px / 400 / 23.52px */
+    --base: 14px;                                     /* legend, panel titles, year labels, footer */
+  }
+  /* Phone sizes, measured at 375px wide (Flourish steps fonts down on small screens) */
+  @media (max-width: 480px) {
+    :root { --title: 20px; --subtitle: 14px; --base: 12px; }
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); }
+  .chart-wrap { padding: 11px; box-sizing: border-box; }                       /* measured 11px outer margin */
+  .chart-title { font-size: var(--title); line-height: var(--title-lh); font-weight: 700; margin: 0; }
+  .chart-subtitle { font-size: var(--subtitle); line-height: var(--subtitle-lh); font-weight: 400; margin: 2px 0 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--base); margin-bottom: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend i { width: 11px; height: 14px; border-radius: 3px; display: inline-block; }   /* measured swatch 11 x 14, radius 3 */
+  #chart { width: 100%; }
+  #chart svg { display: block; overflow: visible; }
+  #chart text { font-family: var(--font); fill: var(--text); }
+  .chart-footer { font-size: var(--base); line-height: 1.35; margin-top: 14px; }
+  .chart-footer a { color: inherit; }
+  .chart-footer i { display: block; margin-bottom: 4px; }
+  /* Popup card, same as 9-D3 (measured from live Flourish): white, 7px padding, 0.2rem corners, drop shadow (blur 5, y 2, 20%) */
+  .tooltip {
+    position: absolute; left: 0; top: 0; display: none; pointer-events: none; z-index: 10;
+    background: #fff; border-radius: 0.2rem; padding: 7px; width: 300px; max-width: calc(100vw - 22px); box-sizing: content-box;  /* live content box: 300px + 7px padding a side (popup_width) */
+    box-shadow: 0 2px 10px rgba(0,0,0,.2); font-family: var(--font); text-align: start;
+  }
+  #chart rect.seg { cursor: pointer; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="chart-wrap">
+  <h1 class="chart-title">Early voting spikes in Maryland</h1>
+  <p class="chart-subtitle">Compared to this point in the previous midterm election, combined early voting is up 30.9%</p>
+  <div class="legend" aria-hidden="true"></div>
+  <div id="chart" role="img" aria-label="Stacked bars comparing 2022 and 2026, seven days before Election Day, by party. Mail-in ballots received: 308,580 in 2022 and 322,379 in 2026, up 4.5%. Early in-person votes: 234,867 and 388,823, up 65.6%. Combined: 543,447 and 711,202, up 30.9%."></div>
+  <!-- Footer note copied from the published Flourish chart (version 113; unchanged as of version 143, Oct. 29) -->
+  <div class="chart-footer">
+    <i>Figures refer to votes collected seven days before Election Day in each cycle, Nov. 1, 2022 and Oct. 27, 2026</i>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 16px;margin-top:4px;">
+      <span>Chart: David Landerman <strong>·</strong> Source: <a href="https://elections.maryland.gov/press_room/index.html">Maryland State Board of Elections</a> mail-in and early-voting reports (2022 figures obtained through a public records request)</span>
+      <img src="https://public.flourish.studio/uploads/3120177/1a5a6109-c127-4a61-aa10-176316b318d0.png" alt="Capital News Service" style="height:18px;margin-left:auto;">
+    </div>
+  </div>
+</div>
+<div class="tooltip" role="status"></div>
+
+<!-- Popup: live Flourish graphic 7's custom popup (popup.popup_custom_main, Oct. 29), pasted as-is.
+     {{Column name}} is filled from the hovered bar's row, using the R export's formatted text;
+     {{Category}} uses the published panel names (PANEL_TITLES); {{SERIES}} is the hovered party (shows only its block). -->
+<script type="text/plain" id="popup-template">
+<div class="{{SERIES}}" style="max-width:300px; font-size:14px; line-height:1.35; color:#1a1a1a">
+  <style>
+    .pp-party { display:none; }
+    .Republican .pp-rep, .Democratic .pp-dem, .Other .pp-oth { display:block; }
+  </style>
+  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding-bottom:6px; border-bottom:1px solid #e2e2dc"><span style="font-size:18px; font-weight:700; line-height:1.2">{{Category}}</span><span style="font-size:18px; font-weight:800; color:#80217f">{{Year}}</span></div>
+  <div style="margin-top:6px; font-size:12px; color:#555"><span style="white-space:nowrap">{{As of}} ·</span> <b style="color:#c71e1d; white-space:nowrap">Seven days before Election Day</b></div>
+
+  <div class="pp-party pp-dem">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px"><b style="color:#1979b9; font-size:15px">Democrats</b><b style="font-size:20px">{{Democratic share (popup)}}</b></div>
+    <div style="height:8px; border-radius:2px; background:#e2e2dc; margin:4px 0 4px; overflow:hidden"><div style="height:8px; width:{{Democratic share (popup)}}; background:#1979b9"></div></div>
+    <div style="font-size:13px; color:#444"><b style="color:#1979b9">{{Democratic (popup)}}</b> of <b style="color:#1a1a1a">{{Total (popup)}}</b> total</div>
+    {{Democratic change (popup)}}
+  </div>
+
+  <div class="pp-party pp-rep">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px"><b style="color:#c71e1d; font-size:15px">Republicans</b><b style="font-size:20px">{{Republican share (popup)}}</b></div>
+    <div style="height:8px; border-radius:2px; background:#e2e2dc; margin:4px 0 4px; overflow:hidden"><div style="height:8px; width:{{Republican share (popup)}}; background:#c71e1d"></div></div>
+    <div style="font-size:13px; color:#444"><b style="color:#c71e1d">{{Republican (popup)}}</b> of <b style="color:#1a1a1a">{{Total (popup)}}</b> total</div>
+    {{Republican change (popup)}}
+  </div>
+
+  <div class="pp-party pp-oth">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px"><b style="color:#faa916; font-size:15px">Other</b><b style="font-size:20px">{{Other share (popup)}}</b></div>
+    <div style="height:8px; border-radius:2px; background:#e2e2dc; margin:4px 0 4px; overflow:hidden"><div style="height:8px; width:{{Other share (popup)}}; background:#faa916"></div></div>
+    <div style="font-size:13px; color:#444"><b style="color:#faa916">{{Other (popup)}}</b> of <b style="color:#1a1a1a">{{Total (popup)}}</b> total</div>
+    {{Other change (popup)}}
+    <div style="margin-top:6px; font-size:11px; color:#666">"Other" = voters not registered as Democrats or Republicans.</div>
+  </div>
+</div>
+</script>
+
+<!-- Data: one row per bar, from full_pia/output/flourish_table_1_stacked_bars.csv -->
+<script type="application/json" id="chart-data">
+[
+{
+"Bar": "2022",
+"Republican": "52605",
+"Democratic": "216325",
+"Other": "39650",
+"Category": "Mail-in voting",
+"Year": "2022",
+"Total": "308580",
+"Republican %": "17",
+"Democratic %": "70.1",
+"Other %": "12.8",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Mail-in ballots received",
+"Republican (popup)": "52,605",
+"Democratic (popup)": "216,325",
+"Other (popup)": "39,650",
+"Total (popup)": "308,580",
+"Republican share (popup)": "17.0%",
+"Democratic share (popup)": "70.1%",
+"Other share (popup)": "12.8%",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": ""
+},
+{
+"Bar": "2026",
+"Republican": "50094",
+"Democratic": "223903",
+"Other": "48382",
+"Category": "Mail-in voting",
+"Year": "2026",
+"Total": "322379",
+"Republican %": "15.5",
+"Democratic %": "69.5",
+"Other %": "15",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Mail-in ballots received",
+"Republican (popup)": "50,094",
+"Democratic (popup)": "223,903",
+"Other (popup)": "48,382",
+"Total (popup)": "322,379",
+"Republican share (popup)": "15.5%",
+"Democratic share (popup)": "69.5%",
+"Other share (popup)": "15.0%",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">-2,511<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-1.5 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+7,578<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-0.6 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+8,732<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+2.2 pts<\/b><\/div><\/div>"
+},
+{
+"Bar": "2022",
+"Republican": "72485",
+"Democratic": "133237",
+"Other": "29145",
+"Category": "Early in-person voting",
+"Year": "2022",
+"Total": "234867",
+"Republican %": "30.9",
+"Democratic %": "56.7",
+"Other %": "12.4",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "72,485",
+"Democratic (popup)": "133,237",
+"Other (popup)": "29,145",
+"Total (popup)": "234,867",
+"Republican share (popup)": "30.9%",
+"Democratic share (popup)": "56.7%",
+"Other share (popup)": "12.4%",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": ""
+},
+{
+"Bar": "2026",
+"Republican": "97170",
+"Democratic": "236676",
+"Other": "54977",
+"Category": "Early in-person voting",
+"Year": "2026",
+"Total": "388823",
+"Republican %": "25",
+"Democratic %": "60.9",
+"Other %": "14.1",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "97,170",
+"Democratic (popup)": "236,676",
+"Other (popup)": "54,977",
+"Total (popup)": "388,823",
+"Republican share (popup)": "25.0%",
+"Democratic share (popup)": "60.9%",
+"Other share (popup)": "14.1%",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+24,685<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-5.9 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+103,439<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+4.2 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+25,832<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.7 pts<\/b><\/div><\/div>"
+},
+{
+"Bar": "2022",
+"Republican": "125090",
+"Democratic": "349562",
+"Other": "68795",
+"Category": "Combined",
+"Year": "2022",
+"Total": "543447",
+"Republican %": "23",
+"Democratic %": "64.3",
+"Other %": "12.7",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Mail-in and early in-person, combined",
+"Republican (popup)": "125,090",
+"Democratic (popup)": "349,562",
+"Other (popup)": "68,795",
+"Total (popup)": "543,447",
+"Republican share (popup)": "23.0%",
+"Democratic share (popup)": "64.3%",
+"Other share (popup)": "12.7%",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": ""
+},
+{
+"Bar": "2026",
+"Republican": "147264",
+"Democratic": "460579",
+"Other": "103359",
+"Category": "Combined",
+"Year": "2026",
+"Total": "711202",
+"Republican %": "20.7",
+"Democratic %": "64.8",
+"Other %": "14.5",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Mail-in and early in-person, combined",
+"Republican (popup)": "147,264",
+"Democratic (popup)": "460,579",
+"Other (popup)": "103,359",
+"Total (popup)": "711,202",
+"Republican share (popup)": "20.7%",
+"Democratic share (popup)": "64.8%",
+"Other share (popup)": "14.5%",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+22,174<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-2.3 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+111,017<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+0.5 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+34,564<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.8 pts<\/b><\/div><\/div>"
+}
+]
+</script>
+
+<script>
+// ---- Settings (each copied from Flourish, or a labeled change) ----
+const SERIES = ["Democratic", "Republican", "Other"];            // live stack order, left to right (stack_sort: descending)
+const COLORS = { Republican: "#c71e1d", Democratic: "#1979b9", Other: "#faa916" };   // CNS red, CNS blue, CNS main orange-yellow #faa916 (David, Oct. 28; Other was #666666, too close to the gray totals)
+// How the % change from 2022 is drawn: "number" (after the 2026 total), "arrow" (growth arrow between the bars),
+// "wedge" (shaded slope between the bar ends) or "badge" (big, next to the panel title). Try one with ?change=arrow
+const CHANGE_STYLE = new URLSearchParams(location.search).get("change") || "number";
+const PANELS = ["Mail-in voting", "Early in-person voting", "Combined"];   // facet = Category, in data order (keys as in the CSV)
+// Panel titles: the Category values themselves, now that the CSV (voting_methods_flourish.csv) uses the published names
+const PANEL_TITLES = { "Mail-in voting": "Mail-in voting", "Early in-person voting": "Early in-person voting", "Combined": "Combined" };
+const X_MAX = 800000;                                            // Flourish's axis ran 0 to 800,000
+const X_TITLE = "Received Ballots";                              // x.title, as live (Oct. 29: David asked for the text to match live)
+const fmtCount = d3.format(",");
+const fmtChange = d => (d > 0 ? "+" : d < 0 ? "−" : "") + d3.format(".1f")(Math.abs(d)) + "%";
+
+const rows = JSON.parse(document.getElementById("chart-data").textContent)
+  .map(r => {
+    const text = Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? "" : String(v)]));
+    return Object.assign(d3.autoType({ ...text }), { raw: text });   // raw: the text exactly as R wrote it, for the popup
+  });
+
+// ---- Popup (live Flourish custom popup; same hover/tap behavior as 9-D3) ----
+const popupTemplate = document.getElementById("popup-template").textContent.trim();
+const fillPopup = (r, series) => popupTemplate.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, k) =>
+  k === "SERIES" ? series : k === "Category" ? PANEL_TITLES[r.Category] : (r.raw[k] ?? ""));
+const tip = d3.select(".tooltip");
+function showTip(event, row, series) {
+  tip.html(fillPopup(row, series)).style("display", "block");
+  const t = tip.node().getBoundingClientRect(), pad = 12, edge = 4;
+  let x = event.pageX + pad, y = event.pageY + pad;
+  if (x + t.width > window.scrollX + innerWidth - edge) x = event.pageX - t.width - pad;   // keep it on screen
+  x = Math.max(window.scrollX + edge, Math.min(x, window.scrollX + innerWidth - t.width - edge));
+  if (y + t.height > window.scrollY + innerHeight - edge) y = event.pageY - t.height - pad;
+  y = Math.max(window.scrollY + edge, y);
+  tip.style("left", x + "px").style("top", y + "px");
+}
+const hideTip = () => tip.style("display", "none");
+// Phones: tapping anywhere that isn't a bar closes the popup
+document.addEventListener("click", e => { if (!(e.target instanceof SVGGeometryElement && e.target.classList.contains("seg"))) hideTip(); });
+rows.forEach(r => { r.total = d3.sum(SERIES, s => r[s]); });     // computed here, so the labels can't drift from the bars
+const byPanel = d3.group(rows, r => r.Category);
+// % change in each panel's total, 2022 to 2026 (shown after the 2026 total)
+const change = new Map(PANELS.map(p => {
+  const a = byPanel.get(p).find(r => r.Year === 2022), b = byPanel.get(p).find(r => r.Year === 2026);
+  return [p, (b.total - a.total) / a.total * 100];
+}));
+
+d3.select(".legend").selectAll("span").data(["Republican", "Democratic", "Other"]).join("span")   // legend order as published
+  .html(d => `<i style="background:${COLORS[d]}"></i>${d}`);
+
+// Text widths, for deciding what fits where
+const ctx = document.createElement("canvas").getContext("2d");
+const textW = (t, size, weight) => { ctx.font = `${weight} ${size}px "Source Sans 3", system-ui, sans-serif`; return ctx.measureText(t).width; };
+
+function draw() {
+  const host = d3.select("#chart");
+  const W = host.node().clientWidth;
+  const phone = W < 460;
+  const base = phone ? 12 : 14;                       // year labels and panel titles (measured 14px desktop)
+  const small = phone ? 11.5 : 12.6;                  // bar-end totals: measured 12.6px / 600
+  const barH = phone ? 26 : 30;                       // thinner than Flourish's 43px (David asked for thinner bars)
+  const inGap = CHANGE_STYLE === "arrow" || CHANGE_STYLE === "wedge";   // these draw the change between the two bars
+  const midGap = inGap ? (phone ? 22 : 26) : 8;       // space between the 2022 and 2026 bars
+  const labRow = 4;                                   // small gap above 2022 / below 2026 (party shares now only in the popup, Oct. 29)
+  const panelTitleH = CHANGE_STYLE === "badge" ? base + 20 : base + 8;
+  const panelGap = phone ? 18 : 22;                   // space between panels
+  const left = Math.ceil(textW("2026", base, 400)) + 10;   // room for the year labels
+  const endGap = 6;                                   // space between a bar's end and its total
+
+  // Bar-end labels: the total on every bar; with the "number" style the change follows the 2026 total.
+  // "arrow" and "wedge" put the change in the gap, just right of the 2026 bar's end.
+  rows.forEach(r => {
+    r.totalText = fmtCount(r.total);
+    r.changeText = r.Year === 2026 ? fmtChange(change.get(r.Category)) : "";
+    const totalW = textW(r.totalText, small, 600), changeW = r.changeText ? textW(r.changeText, small + 1, 700) : 0;
+    r.endW = CHANGE_STYLE === "number" ? totalW + (changeW ? 6 + changeW : 0)
+           : inGap ? Math.max(totalW, changeW) : totalW;
+  });
+  // Plot width: as wide as possible while every end label still fits inside the page
+  const avail = W - left - 2;
+  const lastTickHalf = textW(phone ? "800K" : fmtCount(X_MAX), base, 400) / 2 + 2;   // the last axis label is centered on the plot's end
+  const plotW = Math.min(avail - lastTickHalf, d3.min(rows, r => (avail - endGap - r.endW) * X_MAX / r.total));
+  const x = d3.scaleLinear().domain([0, X_MAX]).range([left, left + plotW]);
+
+  // Each bar's segments, left to right (party shares are no longer printed on the page; they're in the popup)
+  rows.forEach(r => {
+    let x0 = 0;
+    r.segs = SERIES.map(s => { const seg = { key: s, x0, x1: x0 + r[s] }; x0 += r[s]; return seg; });
+  });
+
+  // Lay out the panels top to bottom
+  let y = 0;
+  const layout = PANELS.map(p => {
+    const top = y, [r22, r26] = [2022, 2026].map(yr => byPanel.get(p).find(r => r.Year === yr));
+    y += panelTitleH + labRow;
+    const y22 = y; y += barH + midGap;
+    const y26 = y; y += barH + labRow;
+    const bottom = y; y += panelGap;
+    return { p, top, r22, r26, y22, y26, bottom };
+  });
+  const plotBottom = y - panelGap + 6;
+  const axisH = 22 + base + 10;                        // tick labels + axis title
+  const H = plotBottom + axisH;
+
+  host.selectAll("svg").remove();
+  const svg = host.append("svg").attr("width", W).attr("height", H);
+  svg.append("defs").append("marker").attr("id", "arrowhead").attr("viewBox", "0 0 10 10")
+    .attr("refX", 9).attr("refY", 5).attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto")
+    .append("path").attr("d", "M0,0 L10,5 L0,10 z").attr("fill", "var(--change)");
+
+  // No gridlines: David turned them off in Flourish (version 113: x.gridlines_visible and y.gridlines_visible false)
+
+  layout.forEach(L => {
+    const g = svg.append("g");
+    const title = g.append("text").attr("x", 0).attr("y", L.top + base + (CHANGE_STYLE === "badge" ? 6 : 0))
+      .attr("font-size", base).attr("font-weight", 600).text(PANEL_TITLES[L.p]);   // panel title (measured 14px / 600)
+    const pct = fmtChange(change.get(L.p));
+
+    [[L.r22, L.y22, "above"], [L.r26, L.y26, "below"]].forEach(([r, by, side]) => {
+      g.append("text").attr("x", left - 10).attr("y", by + barH / 2).attr("dy", "0.35em")
+        .attr("text-anchor", "end").attr("font-size", base).text(r.Year);
+
+      g.append("g").selectAll("rect").data(r.segs).join("rect")
+        .attr("x", d => x(d.x0)).attr("width", d => Math.max(0, x(d.x1) - x(d.x0)))
+        .attr("y", by).attr("height", barH)
+        .attr("class", "seg")
+        .attr("fill", d => COLORS[d.key])
+        .attr("stroke", "#fff").attr("stroke-width", 1)                   // Flourish leaves a thin white gap between segments
+        .on("mousemove", (e, d) => showTip(e, r, d.key))                  // popup: hover a party's segment...
+        .on("mouseleave", hideTip)
+        .on("click", (e, d) => showTip(e, r, d.key));                     // ...or tap it on phones
+
+      const end = g.append("text").attr("x", x(r.total) + endGap).attr("y", by + barH / 2).attr("dy", "0.35em")
+        .attr("font-size", small);
+      end.append("tspan").attr("font-weight", 600).text(r.totalText);
+      if (CHANGE_STYLE === "number" && r.changeText) end.append("tspan").attr("dx", 6).attr("font-weight", 700).style("fill", "var(--change)").text(r.changeText);
+    });
+
+    const x22 = x(L.r22.total), x26 = x(L.r26.total), gapMid = L.y22 + barH + midGap / 2;
+    if (CHANGE_STYLE === "arrow") {
+      // Growth arrow: a dashed guide where 2022 ended, an arrow out to where 2026 ends, and the change at its tip
+      g.append("line").attr("x1", x22).attr("x2", x22).attr("y1", L.y22 + barH).attr("y2", L.y26)
+        .attr("stroke", "#999").attr("stroke-width", 1).attr("stroke-dasharray", "2,2");
+      g.append("line").attr("x1", x22).attr("x2", x26).attr("y1", gapMid).attr("y2", gapMid)
+        .attr("stroke", "var(--change)").attr("stroke-width", 2).attr("marker-end", "url(#arrowhead)");
+      g.append("text").attr("x", x26 + endGap).attr("y", gapMid).attr("dy", "0.35em")
+        .attr("font-size", small + 1).attr("font-weight", 700).style("fill", "var(--change)").text(pct);
+    } else if (CHANGE_STYLE === "wedge") {
+      // Growth wedge: a shaded slope from the end of the 2022 bar down to the end of the 2026 bar
+      g.append("path").attr("d", `M${x22},${L.y22 + barH} L${x22},${L.y26} L${x26},${L.y26} Z`)
+        .attr("fill", "var(--change)").attr("fill-opacity", 0.16);
+      g.append("line").attr("x1", x22).attr("x2", x26).attr("y1", L.y22 + barH).attr("y2", L.y26)
+        .attr("stroke", "var(--change)").attr("stroke-width", 1.5);
+      g.append("text").attr("x", x26 + endGap).attr("y", gapMid).attr("dy", "0.35em")
+        .attr("font-size", small + 1).attr("font-weight", 700).style("fill", "var(--change)").text(pct);
+    } else if (CHANGE_STYLE === "badge") {
+      // Badge: the change, big, next to the panel title
+      const tx = textW(PANEL_TITLES[L.p], base, 600) + 10;
+      const badge = g.append("text").attr("x", tx).attr("y", L.top + base + 6).style("fill", "var(--change)");
+      badge.append("tspan").attr("font-size", base * 1.45).attr("font-weight", 800).text(pct);
+      badge.append("tspan").attr("dx", 5).attr("font-size", base * 0.85).attr("font-weight", 400).style("fill", "#666").text("vs. 2022");
+    }
+  });
+
+  // Shared x axis at the bottom: flat labels, no tick marks, about 4 ticks (Flourish v113: tick_label_angle 0, tick_length 0, tick_number 4); fewer on phones
+  const tickStep = plotW < 380 ? 400000 : 200000;
+  const fmtTick = phone ? (d => d === 0 ? "0" : d3.format("~s")(d).replace("k", "K")) : fmtCount;
+  const axis = svg.append("g").attr("transform", `translate(0,${plotBottom})`)
+    .call(d3.axisBottom(x).tickValues(d3.range(0, X_MAX + 1, tickStep)).tickFormat(fmtTick).tickSize(0).tickPadding(6))
+    .call(a => a.select(".domain").remove());
+  axis.selectAll("text").attr("font-size", base).style("fill", "var(--text)");
+  svg.append("text").attr("x", x(0) + plotW / 2).attr("y", plotBottom + 22 + base)
+    .attr("text-anchor", "middle").attr("font-size", base * 1.1).attr("font-weight", 700).text(X_TITLE);   // x.title: measured 15.4px / 700
+}
+
+let lastW = 0;
+new ResizeObserver(() => { const w = document.getElementById("chart").clientWidth; if (w !== lastW) { lastW = w; draw(); } })
+  .observe(document.getElementById("chart"));
+if (document.fonts) document.fonts.ready.then(draw);   // re-measure label widths once the web font is in
+
+// Tell a parent page our height, so an <iframe> can size itself
+// (the content's own height, not the window's, so the frame can shrink as well as grow).
+// It also answers when the parent asks ({requestHeight: true}), in case the first message went out too early.
+const sendHeight = () => parent.postMessage({ chartHeight: Math.ceil(document.querySelector(".chart-wrap").getBoundingClientRect().height) }, "*");
+new ResizeObserver(sendHeight).observe(document.querySelector(".chart-wrap"));
+window.addEventListener("message", e => { if (e.data && e.data.requestHeight) sendHeight(); });
+</script>
+</body>
+</html>

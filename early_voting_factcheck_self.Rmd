@@ -1,0 +1,1100 @@
+---
+title: "early_voting_factcheck_self"
+author: "David Landerman"
+date: "2026-10-29"
+output: html_document
+---
+
+```{r chunk-1-libraries}
+# Chunk 1: libraries
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(jsonlite)
+```
+
+```{r}
+# First Goal Early Voting Totals by Method-Mail-in, Early-in person, and combined. As of One week before election day.
+# source for early voting start day: "beginning the second Thursday before a primary or general election through the Thursday before the election" Maryland State law https://mgaleg.maryland.gov/2021RS/chapters_noln/Ch_660_hb0206E.pdf
+# https://ballotpedia.org/Maryland_elections,_2022 election day 2022 November 8th
+# https://ballotpedia.org/Maryland_elections,_2024 election day 2024 November 5th
+# https://ballotpedia.org/Maryland_elections,_2026 election day 2026 November 3rd
+# One week before election day is Nov. 1, 2022 and Oct. 27, 2026
+
+# Mail-in ballot reports (Excel)
+mail_2022_raw <- read_excel("Press Reports-selected/2022/GG22/11-1-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+mail_2026_raw <- read_excel("direct-download/oct_28_2.14pm/Absentees_Sent_and_Returned_by_County(4).xlsx", col_names = FALSE)
+
+# Early in-person voting raw files (CSV)
+in_person_early_2022 <- read_csv("Press Reports-selected/2022/GG22/11-1-2022/EarlyVoting RAW data.csv")
+in_person_early_2026 <- read_csv("direct-download/oct_28_2.14pm/EarlyVoting_RAW_data.csv")
+```
+
+```{r}
+# Clean files
+
+# ---- 2022 ----
+mail_2022_as_of <- mail_2022_raw[[4]][3]               # save the text in row 3, column 4 of the raw sheet ("As of: November 1, 2022 6 PM")
+mail_2022 <- mail_2022_raw |>                          # start from the raw sheet (never changed, so this chunk can be rerun), then:
+  slice(-(1:5)) |>                                     #   delete rows 1-5 (the title lines); old row 6 is now row 1
+  slice(1:26) |>                                       #   keep row 1 (the header) + 24 counties + "Total" (old row 31); delete the other tables below
+  remove_empty("cols") |>                              #   delete every column where every value is NA (only looks at the rows kept)
+  row_to_names(row_number = 1) |>                      #   make row 1 (old row 6) the column names, and remove it from the data
+  clean_names() |>                                     #   tidy the names: lowercase, spaces become underscores ("DEM SENT" -> dem_sent)
+  select(-category) |>                                 #   drop the category column (now lowercase)
+  mutate(as_of = mail_2022_as_of) |>                   #   add an "as_of" column at the end, with the saved text on every row
+  mutate(as_of = str_remove(as_of, fixed("As of: ")),  #   format as a date, step 1: delete the words "As of: "
+         as_of = str_remove(as_of, fixed(" 6 PM")),    #   step 2: delete " 6 PM", leaving "November 1, 2022"
+         as_of = mdy(as_of))                           #   step 3: read "November 1, 2022" as a real date (2022-11-01); no |> because the pipe ends here
+
+# ---- 2026 ----
+mail_2026_as_of <- mail_2026_raw[[5]][3]               # save the text in row 3, column 5 of the raw sheet ("As of: October 27, 2026 6 PM")
+mail_2026 <- mail_2026_raw |>                          # start from the raw sheet, then:
+  slice(-(1:5)) |>                                     #   delete rows 1-5
+  slice(1:26) |>                                       #   keep the header, 24 counties and "Total"
+  remove_empty("cols") |>                              #   delete all-NA columns
+  row_to_names(row_number = 1) |>                      #   make old row 6 the column names
+  clean_names() |>                                     #   tidy the names: lowercase, spaces become underscores ("DEM SENT" -> dem_sent)
+  select(-category) |>                                 #   drop the category column (now lowercase)
+  mutate(as_of = mail_2026_as_of) |>                   #   add the "as_of" column at the end
+  mutate(as_of = str_remove(as_of, fixed("As of: ")),  #   date step 1: delete "As of: "
+         as_of = str_remove(as_of, fixed(" 6 PM")),    #   date step 2: delete " 6 PM"
+         as_of = mdy(as_of))                           #   date step 3: read it as a date (2026-10-27); the pipe ends here
+
+# Statewide mail-in totals: the "Total" row from each year, stacked into one table
+mail_total_rows <- bind_rows(                            # stack these on top of each other (columns are matched by name):
+  slice_tail(mail_2022, n = 1),                          #   the last row of mail_2022 (the "Total" row), with all its columns
+  slice_tail(mail_2026, n = 1)) |>                       #   the last row of mail_2026 (the "Total" row); then:
+  select(-ends_with("_accepted"), -ends_with("_sent")) |> #   drop every column whose name ends in "_accepted" or "_sent"
+  mutate(county_name = year(as_of)) |>                   #   replace "Total" with the year, taken from each row's as_of date
+  rename(year = county_name) |>                           #   rename the column from county_name to year
+  select(-district)            # drop the district column 
+```
+
+```{r}
+in_person_early_2022_by_party <- in_person_early_2022 |>   # start from the raw 2022 file, then:
+  group_by(PARTY_CODE) |>                                  #   put the rows into groups, one group per party code (DEM, REP, UNA...)
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE)))  #   for each group, add up each day column; na.rm = TRUE skips the blanks
+
+in_person_early_2026_by_party <- in_person_early_2026 |>   # same thing for 2026
+  group_by(PARTY_CODE) |>
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE)))
+
+# How far each file goes: count the early voting days that have any votes (6 in both files)
+in_person_early_days_2022 <- sum(colSums(select(in_person_early_2022_by_party, Day1:Day8)) > 0)  # add up each day column (all parties), ask "did anyone vote that day?", count the yeses
+in_person_early_days_2026 <- sum(colSums(select(in_person_early_2026_by_party, Day1:Day8)) > 0)
+
+# The date the file runs through: the first day of early voting (see the law cited above), plus the days after it
+in_person_early_as_of_2022 <- mdy("October 27, 2022") + in_person_early_days_2022 - 1   # Oct. 27 + 5 more days = Nov. 1, 2022
+in_person_early_as_of_2026 <- mdy("October 22, 2026") + in_person_early_days_2026 - 1   # Oct. 22 + 5 more days = Oct. 27, 2026
+
+# ---- 2022 ----
+in_person_early_2022_by_party <- in_person_early_2022_by_party |>                   # the one-row-per-party table from above, then:
+  mutate(votes = Day1 + Day2 + Day3 + Day4 + Day5 + Day6 + Day7 + Day8) |>          #   add a "votes" column: that party's days added together
+  mutate(party = if_else(PARTY_CODE %in% c("DEM", "REP"), PARTY_CODE, "Other")) |>  #   new column: DEM stays DEM, REP stays REP, every other code becomes "Other"
+  group_by(party) |>                                                                 #   group the rows by that new column (DEM, REP, Other)
+  summarize(votes = sum(votes))                                                      #   one row per group: add up its votes
+in_person_early_2022_by_party <- in_person_early_2022_by_party |>
+  bind_rows(summarize(in_person_early_2022_by_party, party = "Total", votes = sum(votes)))  # stack one more row underneath: "Total", the sum of the three
+
+# ---- 2026 ----
+in_person_early_2026_by_party <- in_person_early_2026_by_party |>                   # same steps for 2026
+  mutate(votes = Day1 + Day2 + Day3 + Day4 + Day5 + Day6 + Day7 + Day8) |>
+  mutate(party = if_else(PARTY_CODE %in% c("DEM", "REP"), PARTY_CODE, "Other")) |>
+  group_by(party) |>
+  summarize(votes = sum(votes))
+in_person_early_2026_by_party <- in_person_early_2026_by_party |>
+  bind_rows(summarize(in_person_early_2026_by_party, party = "Total", votes = sum(votes)))
+
+# ---- 2022 and 2026 side by side ----
+in_person_early_comparison <- full_join(in_person_early_2022_by_party, in_person_early_2026_by_party,  # line up the two tables...
+                                        by = "party",                                                # ...matching rows on the party column
+                                        suffix = c("_2022", "_2026"))                                # the two "votes" columns become votes_2022 and votes_2026
+in_person_early_comparison
+```
+
+```{r}
+#Put in person and mail-in together
+  mail_total_rows_reorg <- mail_total_rows |>                                    #   drop the district column; then:
+  transmute(Category = "Mail-in ballots received",          #   new first column: a label saying what these rows are
+            year,                                           #   keep year as it is
+            dem = as.numeric(dem_received),                 #   text -> number, renamed to dem
+            rep = as.numeric(rep_received),                 #   same for Republicans
+            other = as.numeric(oth_received),               #   same for Other
+            total = as.numeric(total_received),             #   same for the total
+            as_of)                                          #   keep the "As of" date from the report
+mail_total_rows_reorg
+```
+```{r}
+in_person_early_comparison_reorg <- in_person_early_comparison |>  # start from the party-by-year table, then:
+  pivot_longer(c(votes_2022, votes_2026),                          #   turn the two year columns into rows (one number per row)...
+               names_to = "year",                                  #   ...the column's name goes in a new "year" column
+               values_to = "votes",                                #   ...the number goes in a "votes" column
+               names_prefix = "votes_") |>                         #   ...with "votes_" cut off, so "votes_2022" becomes "2022"
+  pivot_wider(names_from = party,                                  #   now make one column per party (DEM, Other, REP, Total)...
+              values_from = votes) |>                              #   ...filled in with the votes; then:
+  transmute(Category = "Early in-person votes",                    #   new first column: a label for these rows
+            year = as.numeric(year),                               #   "2022" is text (it came from a column name); make it a number
+            dem = DEM,                                             #   rename DEM to dem
+            rep = REP,                                             #   REP to rep
+            other = Other,                                         #   Other to other
+            total = Total,                                         #   Total to total
+            as_of = if_else(year == 2022, in_person_early_as_of_2022, in_person_early_as_of_2026))  # the date each file runs through
+in_person_early_comparison_reorg
+```
+
+```{r}
+methods_counts <- bind_rows(mail_total_rows_reorg, in_person_early_comparison_reorg)  # stack them: mail-in 2022, 2026, then early in-person 2022, 2026
+
+combined_rows <- methods_counts |>                          # start from those 4 rows, then:
+  group_by(year) |>                                         #   group by year: the 2022 rows together, the 2026 rows together
+  summarize(Category = "Combined (mail-in + early in-person)",  # one row per year, labeled Combined...
+            dem = sum(dem),                                 #   ...mail-in Dem + early in-person Dem
+            rep = sum(rep),                                 #   ...same for Republicans
+            other = sum(other),                             #   ...same for Other
+            total = sum(total),                             #   ...same for the total
+            as_of = first(as_of))                           #   ...and the mail-in report's date (the first row in each year)
+
+methods_counts <- bind_rows(methods_counts, combined_rows)  # stack the 2 Combined rows under the 4 others
+methods_counts
+```
+
+
+```{r}
+methods_table <- methods_counts |>                          # start from the 6 rows (3 categories x 2 years), then:
+  pivot_wider(names_from = year,                            #   make the year part of the column names...
+              values_from = c(dem, rep, other, total, as_of)) |>  #   ...for each of these columns: dem_2022, dem_2026, ..., as_of_2022, as_of_2026
+  mutate(early_voting_day_2022 = str_c("Day ", in_person_early_days_2022, " of 8"),   # "Day 6 of 8", from the count of days with votes
+         early_voting_day_2026 = str_c("Day ", in_person_early_days_2026, " of 8")) |>
+  mutate(rep_pct_2022 = round(rep_2022 / total_2022 * 100, 1),
+         rep_pct_2026 = round(rep_2026 / total_2026 * 100, 1),
+         dem_pct_2022 = round(dem_2022 / total_2022 * 100, 1),
+         dem_pct_2026 = round(dem_2026 / total_2026 * 100, 1),
+         other_pct_2022 = round(other_2022 / total_2022 * 100, 1),
+         other_pct_2026 = round(other_2026 / total_2026 * 100, 1))
+
+methods_table <- methods_table |>                                          # start from the table with the share columns, then:
+  mutate(dem_difference = dem_2026 - dem_2022,                             #   how many more (or fewer) Democratic votes in 2026
+         rep_difference = rep_2026 - rep_2022,                             #   same for Republicans
+         other_difference = other_2026 - other_2022,                       #   same for Other
+         total_difference = total_2026 - total_2022,                       #   same for the total
+         dem_share_of_change = round(dem_difference / total_difference * 100, 1),     #   Democrats' part of the total change, in %
+         rep_share_of_change = round(rep_difference / total_difference * 100, 1),     #   Republicans' part (negative when they lost votes)
+         other_share_of_change = round(other_difference / total_difference * 100, 1), #   Other's part
+         total_pct_change = round(total_difference / total_2022 * 100, 1), #   % change in the total: the difference as a % of 2022
+         dem_pct_pts_change = round(dem_pct_2026 - dem_pct_2022, 1),       #   change in the Democratic share, in percentage points
+         rep_pct_pts_change = round(rep_pct_2026 - rep_pct_2022, 1),       #   same for Republicans
+         other_pct_pts_change = round(other_pct_2026 - other_pct_2022, 1)) #   same for Other
+methods_table
+
+write_csv(methods_table, "output/methods_table_factcheck.csv")
+```
+
+
+
+
+```{r}
+#Flourish export "Early voting spikes in Maryland (claude voodoo for ease of viewing)
+# Popup helpers: numbers as text for the tooltip
+commas <- \(x) formatC(x, format = "d", big.mark = ",")                       # 216325 -> "216,325"
+signed <- \(x) if_else(x > 0, sprintf("+%.1f", x), sprintf("%.1f", x + 0))    # 1.5 -> "+1.5", -0.6 -> "-0.6"
+
+# The "Change from 2022" block in the 2026 popups, as HTML: the vote change, then the share change in points
+change_line <- \(votes, pts) str_c(
+  "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\">",
+  "<div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022</div>",
+  "<div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes</span><b style=\"color:#1a1a1a; white-space:nowrap\">",
+  if_else(votes > 0, "+", ""), commas(votes), "</b></div>",
+  "<div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total</span><b style=\"color:",
+  case_when(pts > 0 ~ "#80217f", pts < 0 ~ "#de5826", .default = "#1a1a1a"), "; white-space:nowrap\">",
+  signed(pts), " pts</b></div></div>")
+
+voting_methods_flourish <- methods_counts |>                                    # start from the 6 rows (one per bar), then:
+  transmute(Bar = as.character(year),                                           #   A: the bar's label, the year as text ("2022")
+            Republican = rep,                                                   #   B-D: the stacked bar's three pieces
+            Democratic = dem,
+            Other = other,
+            Category = case_when(Category == "Mail-in ballots received" ~ "Mail-in voting",              # E: which panel the bar is in
+                                 Category == "Early in-person votes" ~ "Early in-person voting",
+                                 Category == "Combined (mail-in + early in-person)" ~ "Combined"),
+            Year = year,                                                        #   F: the year as a number
+            Total = total,                                                      #   G
+            `Republican %` = round(rep / total * 100, 1),                       #   H-J: each party's share of the bar, one decimal
+            `Democratic %` = round(dem / total * 100, 1),
+            `Other %` = round(other / total * 100, 1),
+            `As of` = if_else(year == 2022, "Nov. 1, 2022", "Oct. 27, 2026"),   #   K: typed in: one week before each Election Day
+            `Early voting day` = "Day 6 of 8") |>                               #   L: typed in
+  mutate(`Category (popup)` = case_when(Category == "Mail-in voting" ~ "Mail-in ballots received",          # M: popup heading
+                                        Category == "Early in-person voting" ~ "Early in-person votes cast",
+                                        Category == "Combined" ~ "Mail-in and early in-person, combined"),
+         `Republican (popup)` = commas(Republican),                             #   N-Q: the counts with commas ("52,605")
+         `Democratic (popup)` = commas(Democratic),
+         `Other (popup)` = commas(Other),
+         `Total (popup)` = commas(Total),
+         `Republican share (popup)` = str_c(sprintf("%.1f", `Republican %`), "%"),  # R-T: the shares with one decimal and a % sign ("17.0%")
+         `Democratic share (popup)` = str_c(sprintf("%.1f", `Democratic %`), "%"),
+         `Other share (popup)` = str_c(sprintf("%.1f", `Other %`), "%")) |>
+  group_by(Category) |>                                                         #   within each panel (2022 bar first, then 2026), then:
+  mutate(`Republican change (popup)` = if_else(Year == 2026,                    #   U-W: on the 2026 bar only, the change from that panel's 2022 bar
+                                               change_line(Republican - first(Republican), round(`Republican %` - first(`Republican %`), 1)), ""),
+         `Democratic change (popup)` = if_else(Year == 2026,
+                                               change_line(Democratic - first(Democratic), round(`Democratic %` - first(`Democratic %`), 1)), ""),
+         `Other change (popup)` = if_else(Year == 2026,
+                                          change_line(Other - first(Other), round(`Other %` - first(`Other %`), 1)), "")) |>
+  ungroup()                                                                     #   done with the groups
+voting_methods_flourish
+
+write_csv(voting_methods_flourish, "output/voting_methods_flourish.csv")       # save it for upload to Flourish
+```
+
+```{r}
+# Graphic 13 fact-check: every number in the table, one row per voting method
+methods_party_change_table <- methods_table |>                       # start from the methods table, then:
+  filter(Category != "Combined (mail-in + early in-person)") |>      #   graphic 13 only shows mail-in and early in-person, so drop Combined
+  select(Category,                                                   #   keep these columns, renaming as they come over (new name = old name):
+         `Democratic change in votes` = dem_difference,
+         `Republican change in votes` = rep_difference,
+         `Other change in votes` = other_difference,
+         `Total change in votes` = total_difference,
+         `Democratic share of change` = dem_share_of_change,
+         `Republican share of change` = rep_share_of_change,
+         `Other share of change` = other_share_of_change)
+methods_party_change_table
+
+write_csv(methods_party_change_table, "output/methods_party_change_table.csv")   # save it to check against the graphic
+```
+```{r}
+# Graphic 13 Flourish export (claude voodoo): the fact-check table above, written as HTML so Flourish shows it exactly as styled
+#   (as plain text, Flourish reads "+7,578" and "54.9%" as numbers and drops the "+", commas and "%")
+plus_commas <- \(x) str_c(if_else(x > 0, "+", ""), commas(x))                 # 7578 -> "+7,578" (commas() is from the voting_methods export)
+num_cell <- \(x, gray = FALSE) str_c(                                          # a number, right-aligned in a fixed-width box so each column lines up;
+  "<span style=\"display:inline-block;min-width:5.2em;text-align:right;font-variant-numeric:tabular-nums",
+  if_else(gray, ";color:#666", ""), "\">", x, "</span>")                      #   gray = TRUE for the "Share of change" rows
+party_head <- \(name, color) str_c(                                            # a column header with a bar in the party's color under it
+  "<span style=\"display:inline-block;min-width:5.2em;text-align:right;padding-bottom:3px;border-bottom:4px solid ",
+  color, "\">", name, "</span>")
+
+# One "Change in votes" row per method...
+change_rows <- methods_party_change_table |>
+  transmute(order = row_number() * 2 - 1,                                      #   rows 1 and 3 of the final table
+            type = if_else(Category == "Mail-in ballots received", "<b>Mail-in ballots</b>", "<b>Early in-person votes</b>"),  # bold method name
+            row = "Change in votes",
+            Democratic = num_cell(plus_commas(`Democratic change in votes`)),
+            Republican = num_cell(plus_commas(`Republican change in votes`)),
+            Other = num_cell(plus_commas(`Other change in votes`)),
+            Total = num_cell(plus_commas(`Total change in votes`)))
+
+# ...and one gray "Share of change" row under each
+share_rows <- methods_party_change_table |>
+  transmute(order = row_number() * 2,                                          #   rows 2 and 4
+            type = "",                                                         #   blank, so the method name reads like a merged cell
+            row = "<span style=\"color:#666\">Share of change</span>",
+            Democratic = num_cell(sprintf("%.1f%%", `Democratic share of change`), gray = TRUE),   # 54.9 -> "54.9%"
+            Republican = num_cell(sprintf("%.1f%%", `Republican share of change`), gray = TRUE),
+            Other = num_cell(sprintf("%.1f%%", `Other share of change`), gray = TRUE),
+            Total = "")                                                        #   the total's share is always 100%, so it's left blank
+
+methods_party_change_flourish <- bind_rows(change_rows, share_rows) |>         # stack them...
+  arrange(order) |>                                                            #   ...in order: mail-in change, mail-in share, early change, early share
+  select(-order) |>                                                            #   then drop the helper column
+  rename(`Change, 2022 to 2026` = type,                                        #   and give the columns the headers Flourish shows
+         `<span></span>` = row,                                                #   (an empty header: a blank one can get dropped)
+         !!party_head("Democratic", "#1979b9") := Democratic,
+         !!party_head("Republican", "#c71e1d") := Republican,
+         !!party_head("Other", "#faa916") := Other,
+         !!party_head("Total", "#e2e2dc") := Total)
+methods_party_change_flourish
+
+write_csv(methods_party_change_flourish, "output/methods_party_change_flourish.csv")   # save it for upload to Flourish
+```
+
+```{r}
+# Congressional districts: graphic 9
+
+# The early in-person votes are already loaded: in_person_early_2022 and in_person_early_2026 from the first import chunk.
+#   They have a congressional_district_code column ("01"-"08"), which is all the district counts need.
+
+# For the tooltip only: who's running and who holds each seat now
+candidates_raw <- read_csv("supplemental_reports/2026_GG_representativeincongressbydistrict_candidatelist.csv")  # SBE 2026 candidate list for Congress, downloaded 10/26/2026
+incumbents_raw <- fromJSON("supplemental_reports/US_Congressional_Districts_2022.geojson")                      # Maryland iMAP district file, downloaded 10/26/2026
+```
+
+
+
+```{r}
+# The current member of Congress for each district, from the table inside the map file
+incumbents <- incumbents_raw$features$properties |>                                            # the data table inside the GeoJSON, then:
+  transmute(district = as.numeric(DISTRICT),                                                   #   "01" -> 1
+            incumbent = US_Representatives,                                                    #   the member's name ("Andrew P. Harris")
+            incumbent_party = if_else(US_Representatives_Party == "Democrat",                  #   iMAP writes "Democrat"; SBE writes "Democratic",
+                                      "Democratic", US_Representatives_Party))                 #   so match SBE's spelling
+
+# Active candidates, each marked TRUE/FALSE for whether they're the incumbent
+candidates <- candidates_raw |>                                                                # the SBE candidate list as it came in, then:
+  remove_empty("cols") |>                                                                      #   drop empty columns (including the extra ...35 one)
+  filter(`Candidate Status` == "Active") |>                                                    #   keep only active candidates (drops withdrawn and failed-to-qualify)
+  mutate(district = parse_number(`Contest Run By District Name and Number`)) |>                #   "Congressional District 1" -> 1
+  left_join(incumbents, by = "district") |>                                                    #   add each district's current member and party to its candidates
+  mutate(last_name = str_remove(`Candidate Ballot Last Name and Suffix`, fixed(", Jr.")),      #   "Olszewski, Jr." -> "Olszewski"
+         is_incumbent = `Office Political Party` == incumbent_party &                          #   incumbent = same party as the current member,
+                        !str_starts(`Filing Type and Date`, "Write-In") &                      #   not a write-in,
+                        str_detect(incumbent, fixed(last_name)))                               #   and their last name is in the member's name
+candidates |> filter(is_incumbent) |> select(district, `Candidate Ballot Last Name and Suffix`, incumbent)   # check: who got marked (District 5 should have none)
+```
+
+```{r}
+# One row per district: who holds the seat, whether they're running, and who's on the ballot (for graphic 9's tooltip)
+candidates_by_district <- candidates |>                                                        # the active candidates, then:
+  mutate(name = str_c(`Candidate First Name and Middle Name`, " ", `Candidate Ballot Last Name and Suffix`),  #   full name: "Andy Harris"
+         party = `Office Political Party`,                                                     #   a shorter name for the party column
+         write_in = str_starts(`Filing Type and Date`, "Write-In"),                            #   TRUE for write-ins (their names aren't printed on the ballot)
+         name_party = str_c(name, " (", party, if_else(is_incumbent, ", incumbent", ""), ")")) |>  #   "Edward Shlikas (Unaffiliated)", for the lists that mix parties
+  group_by(district) |>                                                                        #   one group per district, then one row per group:
+  summarize(Incumbent = str_c(first(incumbent), " (", first(incumbent_party), ")"),            #   "Andrew P. Harris (Republican)" (same on every row, so take the first)
+            `Incumbent running` = if_else(any(is_incumbent), "Yes", "No (open seat)"),         #   Yes if any of the district's candidates is the incumbent
+            `Democratic candidate` = str_c(name[party == "Democratic" & !write_in], collapse = "; "),   # the Democrat on the ballot
+            `Republican candidate` = str_c(name[party == "Republican" & !write_in], collapse = "; "),   # the Republican on the ballot
+            `Other candidates on the ballot` = str_c(name_party[!party %in% c("Democratic", "Republican") & !write_in], collapse = "; "),  # everyone else on the ballot
+            `Write-in candidates` = str_c(name_party[write_in], collapse = "; "))              #   write-ins, from any party
+candidates_by_district
+```
+```{r}
+# Early in-person votes by congressional district and party, 2022
+in_person_early_2022_by_district <- in_person_early_2022 |>                       # start from the raw 2022 file, then:
+  group_by(congressional_district_code, PARTY_CODE) |>                            #   one group per district-and-party (District 01 DEM, District 01 REP, ...)
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE)), .groups = "drop") |>   #   add up each day column in each group; .groups = "drop" ends the grouping
+  mutate(votes = Day1 + Day2 + Day3 + Day4 + Day5 + Day6 + Day7 + Day8,           #   each row's days added together
+         party = if_else(PARTY_CODE %in% c("DEM", "REP"), PARTY_CODE, "Other")) |>  #   DEM, REP, everyone else = "Other"
+  group_by(congressional_district_code, party) |>                                 #   group again, now by district and DEM/REP/Other
+  summarize(votes = sum(votes), .groups = "drop") |>                              #   one row per district and party
+  pivot_wider(names_from = party, values_from = votes) |>                         #   one row per district, parties across: DEM, Other, REP
+  transmute(district = as.numeric(congressional_district_code),                   #   "01" -> 1, to match candidates_by_district
+            dem = DEM, rep = REP, other = Other,                                  #   same short names as methods_counts
+            total = DEM + REP + Other)                                            #   the district's total
+
+# The same for 2026
+in_person_early_2026_by_district <- in_person_early_2026 |>
+  group_by(congressional_district_code, PARTY_CODE) |>
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE)), .groups = "drop") |>
+  mutate(votes = Day1 + Day2 + Day3 + Day4 + Day5 + Day6 + Day7 + Day8,
+         party = if_else(PARTY_CODE %in% c("DEM", "REP"), PARTY_CODE, "Other")) |>
+  group_by(congressional_district_code, party) |>
+  summarize(votes = sum(votes), .groups = "drop") |>
+  pivot_wider(names_from = party, values_from = votes) |>
+  transmute(district = as.numeric(congressional_district_code),
+            dem = DEM, rep = REP, other = Other,
+            total = DEM + REP + Other)
+
+# Both years side by side, one row per district
+cd_counts <- full_join(in_person_early_2022_by_district, in_person_early_2026_by_district,  # line up the two years...
+                       by = "district",                                                    # ...matching rows on the district
+                       suffix = c("_2022", "_2026"))                                       # dem becomes dem_2022 and dem_2026, and so on
+cd_counts
+```
+```{r}
+# The district table: each district's change from 2022 to 2026, plus a statewide row
+cd_table <- cd_counts |>                                                         # the 8 districts, then:
+  bind_rows(summarize(cd_counts, across(dem_2022:total_2026, sum))) |>           #   add a 9th row: every column added up (the statewide totals)
+  mutate(district = if_else(is.na(district), "Statewide", str_c("District ", district))) |>  # name the rows: "District 1" ... and "Statewide" for the new one
+  mutate(as_of_2022 = in_person_early_as_of_2022,                                #   the date each early voting file runs through (Nov. 1, 2022)
+         as_of_2026 = in_person_early_as_of_2026,                                #   (Oct. 27, 2026)
+         early_voting_day = str_c("Day ", in_person_early_days_2026, " of 8"),   #   "Day 6 of 8"
+         .after = district) |>                                                   #   put these three right after the district name
+  mutate(dem_difference = dem_2026 - dem_2022,                                   #   how many more Democratic early votes in 2026
+         rep_difference = rep_2026 - rep_2022,                                   #   same for Republicans
+         other_difference = other_2026 - other_2022,                             #   same for Other
+         total_difference = total_2026 - total_2022,                             #   same for the total
+         dem_pct_change = round(dem_difference / dem_2022 * 100, 1),             #   % change: the difference as a % of 2022
+         rep_pct_change = round(rep_difference / rep_2022 * 100, 1),
+         other_pct_change = round(other_difference / other_2022 * 100, 1),
+         total_pct_change = round(total_difference / total_2022 * 100, 1),
+         dem_share_of_change = round(dem_difference / total_difference * 100, 1),     #   Democrats' part of the district's added votes, in %
+         rep_share_of_change = round(rep_difference / total_difference * 100, 1),     #   Republicans' part
+         other_share_of_change = round(other_difference / total_difference * 100, 1)) #   Other's part
+
+write_csv(cd_table, "output/cd_table_factcheck.csv")   # save the district table as a CSV for fact-checking
+```
+
+```{r}
+# Graphic 9 Flourish export (claude voodoo), built from cd_table: one row per bar (8 districts x 2 years), every tooltip piece as text or HTML.
+# Uses commas(), signed() and change_line() from the voting_methods export chunk, so run that chunk first.
+# Popup numbers are wrapped in <span>...</span>: otherwise Flourish reads "29,315" or "47.2%" as a number and drops the comma or %.
+span <- \(x) str_c("<span>", x, "</span>")                                         # "29,315" -> "<span>29,315</span>"
+plus <- \(x) str_c(if_else(x >= 0, "+", ""), commas(x))                            # 8930 -> "+8,930"
+
+cd_flourish_base <- cd_table |>                                                    # the district table, then:
+  filter(district != "Statewide") |>                                               #   the graphic has the 8 districts only
+  mutate(district_number = parse_number(district))                                 #   "District 1" -> 1, to match candidates_by_district
+
+# The candidate list for each district's tooltip, as HTML: one line per candidate on the ballot (no write-ins)
+candidates_popup <- candidates |>
+  filter(!str_starts(`Filing Type and Date`, "Write-In")) |>                       # write-ins aren't printed on the ballot
+  mutate(party = `Office Political Party`,
+         line = str_c("<div><b style=\"color:",
+                      case_when(party == "Democratic" ~ "#1979b9", party == "Republican" ~ "#c71e1d", .default = "#666666"),  # D blue, R red, others gray
+                      "\">", str_sub(party, 1, 1), "</b>&nbsp; ",                                                              # the party's first letter
+                      `Candidate First Name and Middle Name`, " ", `Candidate Ballot Last Name and Suffix`,                    # the name
+                      if_else(is_incumbent, " <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT</span>", ""),
+                      "</div>")) |>
+  group_by(district) |>
+  summarize(`Candidates (popup)` = str_c(line, collapse = "")) |>                  # one district's lines glued together
+  rename(district_number = district)
+
+# The district-wide pieces of the tooltip (the same on both of a district's bars), straight from cd_table's columns
+district_popup <- cd_flourish_base |>
+  transmute(district_number,
+            `District change (popup)` = str_c("<span style=\"color:", if_else(total_difference >= 0, "#80217f", "#de5826"),   # purple up, orange-red down
+                                              "; white-space:nowrap\">", signed(total_pct_change), "%</span>"),
+            `As of 2022 (popup)` = "Nov. 1, 2022",
+            `As of 2026 (popup)` = "Oct. 27, 2026",
+            `District 2022 total (popup)` = span(commas(total_2022)),
+            `District 2026 total (popup)` = span(commas(total_2026)),
+            `Democratic vote change (popup)` = span(plus(dem_difference)),
+            `Republican vote change (popup)` = span(plus(rep_difference)),
+            `Other vote change (popup)` = span(plus(other_difference)),
+            `Democratic share of new votes (popup)` = span(sprintf("%.0f%%", dem_difference / total_difference * 100)),     # whole numbers in the tooltip ("44%")
+            `Republican share of new votes (popup)` = span(sprintf("%.0f%%", rep_difference / total_difference * 100)),
+            `Other share of new votes (popup)` = span(sprintf("%.0f%%", other_difference / total_difference * 100)),
+            `New votes bar (popup)` = str_c(                                       # one bar of the added votes, split by party
+              "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\">",
+              "<div style=\"width:", sprintf("%.1f", pmax(dem_difference / total_difference * 100, 0)), "%; background:#1979b9\"></div>",
+              "<div style=\"width:", sprintf("%.1f", pmax(rep_difference / total_difference * 100, 0)), "%; background:#c71e1d\"></div>",
+              "<div style=\"width:", sprintf("%.1f", pmax(other_difference / total_difference * 100, 0)), "%; background:#faa916\"></div>",
+              "</div>"),
+            `District vote change (popup)` = span(plus(total_difference)))
+
+# The bars: one row per district and year
+in_person_congressional_flourish <- cd_flourish_base |>                           # the 8 districts, then:
+  select(district_number, district, dem_2022:total_2026) |>                        #   just the counts
+  pivot_longer(dem_2022:total_2026, names_to = c(".value", "year"), names_sep = "_") |>  # one row per district and year
+  mutate(year = as.numeric(year)) |>
+  arrange(district_number, year) |>                                                #   District 1 2022, District 1 2026, District 2 2022, ...
+  transmute(district_number,                                                       #   (kept for the joins below, dropped at the end)
+            Bar = as.character(year),                                              #   A: the bar's label
+            Republican = rep, Democratic = dem, Other = other,                     #   B-D: the stacked bar
+            Category = district,                                                   #   E: which panel ("District 1")
+            Year = year,                                                           #   F
+            Total = total,                                                         #   G
+            `Republican %` = round(rep / total * 100, 1),                          #   H-J: each party's share of the bar
+            `Democratic %` = round(dem / total * 100, 1),
+            `Other %` = round(other / total * 100, 1),
+            `As of` = if_else(year == 2022, "Nov. 1, 2022", "Oct. 27, 2026"),      #   K
+            `Early voting day` = "Day 6 of 8",                                     #   L
+            `Category (popup)` = "Early in-person votes cast",                     #   M
+            `Republican (popup)` = span(commas(Republican)),                       #   N-Q: counts with commas
+            `Democratic (popup)` = span(commas(Democratic)),
+            `Other (popup)` = span(commas(Other)),
+            `Total (popup)` = span(commas(Total)),
+            `Republican share (popup)` = span(str_c(sprintf("%.1f", `Republican %`), "%")),   # R-T: shares with a % sign
+            `Democratic share (popup)` = span(str_c(sprintf("%.1f", `Democratic %`), "%")),
+            `Other share (popup)` = span(str_c(sprintf("%.1f", `Other %`), "%"))) |>
+  group_by(Category) |>                                                            #   U-W: on the 2026 bar only, the change from the district's 2022 bar
+  mutate(`Republican change (popup)` = if_else(Year == 2026, change_line(Republican - first(Republican), round(`Republican %` - first(`Republican %`), 1)), ""),
+         `Democratic change (popup)` = if_else(Year == 2026, change_line(Democratic - first(Democratic), round(`Democratic %` - first(`Democratic %`), 1)), ""),
+         `Other change (popup)` = if_else(Year == 2026, change_line(Other - first(Other), round(`Other %` - first(`Other %`), 1)), "")) |>
+  ungroup() |>
+  left_join(rename(candidates_by_district, district_number = district), by = "district_number") |>   # X-AC: incumbent, running, candidates by party
+  left_join(candidates_popup, by = "district_number") |>                           #   AD: the candidate list as HTML
+  left_join(district_popup, by = "district_number") |>                             #   AE-AQ: the district-wide change pieces
+  select(-district_number)                                                         #   done with the join column
+in_person_congressional_flourish
+
+write_csv(in_person_congressional_flourish, "output/in_person_congressional_flourish.csv")   # save it for upload to Flourish
+```
+
+```{r}
+#Time Domain Graphic
+# Early voting time domain: graphic 12
+
+# ---- Early in-person: the last raw file of each election (each one has every day, in Day1-Day8) ----
+in_person_early_2022_final <- read_csv("Press Reports-selected/2022/GG22/11-3-2022/EarlyVoting RAW data.csv")              # 2022, all 8 days
+in_person_early_2024_final <- read_csv("Press Reports-selected/2024/PG24/EV_SDR_End_11012024/EarlyVoting RAW data.csv")    # 2024, all 8 days
+# 2026: in_person_early_2026 from the first import chunk (days 1-6 so far)
+
+```
+
+```{r}
+# ---- Mail-in: one "Absentees Sent and Returned by County" report per day, 16 to 5 days before Election Day ----
+# Each report is a running total ("received so far, as of 6 PM that day"), so every day needs its own file.
+# The 2024 and 2026 folders are named for the day SBE posted the report, one day after its "As of" date.
+# No 2026 reports yet for 6 and 5 days out (Oct. 28 and 29).
+
+#This is the subset of days because it starts at the first report for the year with the earliest data (10/23/2022 i.e. 16 days before election day) for each year and stops at the 5 day mark before election day. Mail-in ballots can be received after that mark but the idea is to compare it to the last day of early in-person voting which is 5 days before election day
+#
+# Every file gets the same steps:
+#   raw       = the sheet as it is
+#   top_text  = the title rows (rows 1-5) as one list of text, to search for the "As of" and "Election" lines
+#   slice(6:31) = keep the header (row 6) and the first table, the ALL category: 24 counties and the "Total" row (row 31)
+#   then: header row -> column names, tidy names, keep only the Total row, drop the "_sent" columns, add the date and year
+# regex "^As of:"   = text that starts with "As of:" (^ = the start), e.g. "As of: October 27, 2026 6 PM"
+# regex "^Election:" = text that starts with "Election:", e.g. "Election: 2026 Gubernatorial General Election"
+# regex "[A-Z][a-z]+ \\d+, \\d{4}" = a capitalized month, a space, the day's digits, a comma, a space, a 4-digit year -> "October 27, 2026"
+# regex "\\d{4}" = the first 4 digits in a row -> the election year
+
+# 2022: as of Oct. 23, 16 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-23-2022/Absentees Sent and Returned by County_10_23_2022.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_23 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 24, 15 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-24-2022/Absentees Sent and Returned by County_10_24_2022.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_24 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 25, 14 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-25-2022/Absentees Sent and Returned by County_10_25_2022.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_25 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 26, 13 days out (Willis; the PIA only has a PDF)
+raw <- read_excel("supplemental_reports/absentee_ballots_20221027.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_26 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 27, 12 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-27-2022/Absentees Sent and Returned by County_10_27_2022.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_27 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 28, 11 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-28-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_28 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 29, 10 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-29-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_29 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 30, 9 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-30-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_30 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Oct. 31, 8 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/10-31-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_10_31 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Nov. 1, 7 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/11-1-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_11_01 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Nov. 2, 6 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/11-2-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_11_02 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2022: as of Nov. 3, 5 days out
+raw <- read_excel("Press Reports-selected/2022/GG22/11-3-2022/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2022_11_03 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 20, 16 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10212024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_20 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 21, 15 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10222024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_21 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 22, 14 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10232024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_22 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 23, 13 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10242024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_23 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 24, 12 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/EV_SDR_Start_10252024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_24 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 25, 11 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10262024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_25 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 26, 10 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10272024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_26 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 27, 9 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10282024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_27 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 28, 8 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10292024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_28 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 29, 7 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10302024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_29 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 30, 6 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/10312024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_30 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2024: as of Oct. 31, 5 days out
+raw <- read_excel("Press Reports-selected/2024/PG24/EV_SDR_End_11012024/Absentees Sent and Returned by County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2024_10_31 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 18, 16 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10192026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_18 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 19, 15 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10202026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_19 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 20, 14 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10212026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_20 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 21, 13 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10222026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_21 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 22, 12 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10232026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_22 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 23, 11 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10242026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_23 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 24, 10 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10252026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_24 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 25, 9 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10262026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_25 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 26, 8 days out
+raw <- read_excel("Press Reports-selected/2026/GG26/10272026/Absentees_Sent_and_Returned_by_County.xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_26 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+
+# 2026: as of Oct. 27, 7 days out (the PIA stops at Oct. 26)
+raw <- read_excel("direct-download/oct_28_2.14pm/Absentees_Sent_and_Returned_by_County(4).xlsx", col_names = FALSE)
+top_text <- unlist(raw[1:5, ])
+mail_2026_10_27 <- raw |>
+  slice(6:31) |> remove_empty("cols") |> row_to_names(row_number = 1) |> clean_names() |>
+  filter(county_name == "Total") |>
+  select(-ends_with("_sent")) |>
+  mutate(as_of = mdy(str_extract(str_subset(top_text, "^As of:"), "[A-Z][a-z]+ \\d+, \\d{4}")),
+         year = as.numeric(str_extract(str_subset(top_text, "^Election:"), "\\d{4}")))
+```
+
+```{r}
+# Stack all 34 Total rows into one table
+mail_daily <- bind_rows(
+  mail_2022_10_23,
+  mail_2022_10_24,
+  mail_2022_10_25,
+  mail_2022_10_26,
+  mail_2022_10_27,
+  mail_2022_10_28,
+  mail_2022_10_29,
+  mail_2022_10_30,
+  mail_2022_10_31,
+  mail_2022_11_01,
+  mail_2022_11_02,
+  mail_2022_11_03,
+  mail_2024_10_20,
+  mail_2024_10_21,
+  mail_2024_10_22,
+  mail_2024_10_23,
+  mail_2024_10_24,
+  mail_2024_10_25,
+  mail_2024_10_26,
+  mail_2024_10_27,
+  mail_2024_10_28,
+  mail_2024_10_29,
+  mail_2024_10_30,
+  mail_2024_10_31,
+  mail_2026_10_18,
+  mail_2026_10_19,
+  mail_2026_10_20,
+  mail_2026_10_21,
+  mail_2026_10_22,
+  mail_2026_10_23,
+  mail_2026_10_24,
+  mail_2026_10_25,
+  mail_2026_10_26,
+  mail_2026_10_27) |>
+  select(-ends_with("_accepted"), -district, -category) |>   # drop the "_accepted" columns, district and category
+  relocate(year, as_of)                                        # put year first and as_of second
+mail_daily
+
+write_csv(mail_daily, "output/mail_daily.csv")   # save it to check against the original sheets
+#10/29/26 hand validated mail_daily.csv with individual reports David Landerman
+```
+
+
+```{r}
+# ---- Early in-person votes by day, statewide, as a running total ----
+# Unlike the mail-in reports, each Day1-Day8 column holds only that day's votes, so the running total has to be added up here.
+
+# 2022: all 8 days
+in_person_early_2022_daily <- in_person_early_2022_final |>
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE))) |>          # add up each day column, statewide: one row, 8 columns
+  pivot_longer(Day1:Day8, names_to = "day", values_to = "votes") |>   # turn the 8 day columns into 8 rows (day, votes)
+  mutate(year = 2022,
+         in_person_early_day = parse_number(day),                     # "Day3" -> 3
+         as_of = as.Date("2022-10-27") + in_person_early_day - 1,     # day 1 = Oct. 27, 2022 (the second Thursday before Election Day; see the source at the top)
+         early = cumsum(votes))                                       # running total: day 3 = Day1 + Day2 + Day3
+
+#early voting day 1 2022 is october 27th 2022. According to 'full_pia/Press Reports-selected/2022/GG22/10-27-2022/EarlyVoting  by Councilmanic District_10_27_2022.pdf'
+
+# 2024: all 8 days
+in_person_early_2024_daily <- in_person_early_2024_final |>
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE))) |>
+  pivot_longer(Day1:Day8, names_to = "day", values_to = "votes") |>
+  mutate(year = 2024,
+         in_person_early_day = parse_number(day),
+         as_of = as.Date("2024-10-24") + in_person_early_day - 1,     # day 1 = Oct. 24, 2024
+         early = cumsum(votes))
+
+#early voting day 1 2024 is october 24th 2024. According to 'full_pia/Press Reports-selected/2024/PG24/EV_SDR_Start_10252024/EarlyVoting  by Councilmanic District.pdf'
+
+# 2026: days 1-6 so far
+in_person_early_2026_daily <- in_person_early_2026 |>
+  summarize(across(Day1:Day8, \(x) sum(x, na.rm = TRUE))) |>
+  pivot_longer(Day1:Day8, names_to = "day", values_to = "votes") |>
+  mutate(year = 2026,
+         in_person_early_day = parse_number(day),
+         as_of = as.Date("2026-10-22") + in_person_early_day - 1,     # day 1 = Oct. 22, 2026
+         early = cumsum(votes)) |>
+  filter(votes > 0)                                                   # drop days 7 and 8: no votes yet
+
+#early voting day 1 2026 is october 22th 2026. According to 'full_pia/Press Reports-selected/2026/GG26/EV_10222026/EarlyVoting_by_Congressional_District.pdf'
+
+# Stack the three years into one table
+early_daily <- bind_rows(in_person_early_2022_daily, in_person_early_2024_daily, in_person_early_2026_daily) |>
+  select(year, as_of, in_person_early_day, votes, early)
+early_daily
+```
+
+
+```{r}
+# Election Day for each general election
+election_day_2022 <- as.Date("2022-11-08")
+election_day_2024 <- as.Date("2024-11-05")
+election_day_2026 <- as.Date("2026-11-03")
+# https://ballotpedia.org/Maryland_elections,_2022 election day 2022 November 8th
+# https://ballotpedia.org/Maryland_elections,_2024 election day 2024 November 5th
+# https://ballotpedia.org/Maryland_elections,_2026 election day 2026 November 3rd
+```
+
+```{r}
+# Days before Election Day: that year's Election Day minus the row's as_of date
+mail_daily <- mail_daily |>
+  mutate(days_out = as.numeric(case_when(year == 2022 ~ election_day_2022 - as_of,
+                                         year == 2024 ~ election_day_2024 - as_of,
+                                         year == 2026 ~ election_day_2026 - as_of)))
+
+early_daily <- early_daily |>
+  mutate(days_out = as.numeric(case_when(year == 2022 ~ election_day_2022 - as_of,
+                                         year == 2024 ~ election_day_2024 - as_of,
+                                         year == 2026 ~ election_day_2026 - as_of)))
+```
+
+
+```{r}
+# ---- daily: mail-in, early in-person and the two combined, by year and day ----
+daily <- mail_daily |>                                                                      # start from mail-in: it has every day, 16 to 5 days out
+  left_join(select(early_daily, year, days_out, early), by = c("year", "days_out")) |>    # attach that day's early in-person running total; left_join keeps every mail-in day
+  mutate(mail = as.numeric(total_received),                                                 # mail-in received so far, as a number
+         early = replace_na(early, 0),                                                      # 16-13 days out: early voting hadn't started yet, so 0
+         combined = mail + early) |>                                                        # mail-in + early in-person
+  select(year, as_of, days_out, mail, early, combined)
+daily
+```
+
+```{r}
+# ---- Percent change: 2026 vs. 2022 and 2026 vs. 2024, for each day ----
+# To compare years they have to sit on the same row, so first spread daily out: one row per day, one column per measure and year
+daily_wide <- daily |>
+  pivot_wider(id_cols = days_out,                                   # one row per day (16 to 5 days out)
+              names_from = year,                                    # the years become part of the column names...
+              values_from = c(as_of, mail, early, combined)) |>     # ...for each of these: as_of_2022, mail_2022, mail_2024, mail_2026, ...
+  mutate(mail_2026_vs_2022     = round((mail_2026 - mail_2022) / mail_2022 * 100, 1),                  # % change: (new - old) / old x 100
+         mail_2026_vs_2024     = round((mail_2026 - mail_2024) / mail_2024 * 100, 1),
+         early_2026_vs_2022    = round((early_2026 - early_2022) / early_2022 * 100, 1),              # NaN 16-13 days out (0 / 0: no early voting yet)
+         early_2026_vs_2024    = round((early_2026 - early_2024) / early_2024 * 100, 1),
+         combined_2026_vs_2022 = round((combined_2026 - combined_2022) / combined_2022 * 100, 1),
+         combined_2026_vs_2024 = round((combined_2026 - combined_2024) / combined_2024 * 100, 1))
+daily_wide
+
+write_csv(daily_wide, "output/daily_wide.csv", na = "")   # save it to check the counts and % changes; na = "" writes blanks as empty cells
+```
+
+```{r}
+# ---- Flourish export for graphic 12: one row per measure and day, the three years side by side ----
+# First the popup's date lines, AP style: short month name and a period ("%b." = "Oct."), the day, a comma, the year -> "Oct. 23, 2022", "Nov. 1, 2022"
+daily_wide <- daily_wide |>
+  mutate(date_2022 = str_c(format(as_of_2022, "%b."), " ", day(as_of_2022), ", ", year(as_of_2022)),
+         date_2024 = str_c(format(as_of_2024, "%b."), " ", day(as_of_2024), ", ", year(as_of_2024)),
+         date_2026 = str_c(format(as_of_2026, "%b."), " ", day(as_of_2026), ", ", year(as_of_2026)),    # blank for 6 and 5 days out (no 2026 reports yet)
+         # The popup's colored % changes, like graphic 9's "District change (popup)": purple up, orange-red down, blank when there's no 2026 number
+         mail_2026_vs_2022_popup     = if_else(is.na(mail_2026_vs_2022), NA, str_c("<span style=\"color:", if_else(mail_2026_vs_2022 >= 0, "#80217f", "#de5826"), "; white-space:nowrap\">", signed(mail_2026_vs_2022), "%</span>")),
+         mail_2026_vs_2024_popup     = if_else(is.na(mail_2026_vs_2024), NA, str_c("<span style=\"color:", if_else(mail_2026_vs_2024 >= 0, "#80217f", "#de5826"), "; white-space:nowrap\">", signed(mail_2026_vs_2024), "%</span>")),
+         early_2026_vs_2022_popup    = if_else(is.na(early_2026_vs_2022), NA, str_c("<span style=\"color:", if_else(early_2026_vs_2022 >= 0, "#80217f", "#de5826"), "; white-space:nowrap\">", signed(early_2026_vs_2022), "%</span>")),
+         early_2026_vs_2024_popup    = if_else(is.na(early_2026_vs_2024), NA, str_c("<span style=\"color:", if_else(early_2026_vs_2024 >= 0, "#80217f", "#de5826"), "; white-space:nowrap\">", signed(early_2026_vs_2024), "%</span>")),
+         combined_2026_vs_2022_popup = if_else(is.na(combined_2026_vs_2022), NA, str_c("<span style=\"color:", if_else(combined_2026_vs_2022 >= 0, "#80217f", "#de5826"), "; white-space:nowrap\">", signed(combined_2026_vs_2022), "%</span>")),
+         combined_2026_vs_2024_popup = if_else(is.na(combined_2026_vs_2024), NA, str_c("<span style=\"color:", if_else(combined_2026_vs_2024 >= 0, "#80217f", "#de5826"), "; white-space:nowrap\">", signed(combined_2026_vs_2024), "%</span>")))
+
+# The Mail-in rows: the line's numbers, its colored % changes, and its labels for the popup
+graphic_mail <- daily_wide |>
+  transmute(Measure = "Mail-in", `Days before Election Day` = days_out,
+            `2022` = mail_2022, `2024` = mail_2024, `2026` = mail_2026,
+            `2026 vs 2022 (popup)` = mail_2026_vs_2022_popup, `2026 vs 2024 (popup)` = mail_2026_vs_2024_popup,
+            `Measure (popup)` = "Mail-in ballots",                  # the popup's "mail-in ballots by Oct. 23, 2022" line
+            `Measure key (popup)` = "m-mail")                       # tells the popup to show the mail-in number
+
+# The Early in-person rows: blank 16-13 days out, so the line starts when early voting does (12 days out)
+graphic_early <- daily_wide |>
+  transmute(Measure = "Early in-person", `Days before Election Day` = days_out,
+            `2022` = if_else(days_out <= 12, early_2022, NA),
+            `2024` = if_else(days_out <= 12, early_2024, NA),
+            `2026` = if_else(days_out <= 12, early_2026, NA),
+            `2026 vs 2022 (popup)` = if_else(days_out <= 12, early_2026_vs_2022_popup, NA),
+            `2026 vs 2024 (popup)` = if_else(days_out <= 12, early_2026_vs_2024_popup, NA),
+            `Measure (popup)` = "Early in-person votes",
+            `Measure key (popup)` = "m-early")
+
+# The Combined rows
+graphic_combined <- daily_wide |>
+  transmute(Measure = "Combined", `Days before Election Day` = days_out,
+            `2022` = combined_2022, `2024` = combined_2024, `2026` = combined_2026,
+            `2026 vs 2022 (popup)` = combined_2026_vs_2022_popup, `2026 vs 2024 (popup)` = combined_2026_vs_2024_popup,
+            `Measure (popup)` = "Combined ballots",
+            `Measure key (popup)` = "m-comb")
+
+# The columns that are the same on all three lines' rows for a given day. Every row carries all of them;
+# the popup picks which number to show from the Measure key and the hovered year.
+popup_shared <- daily_wide |>
+  transmute(days_out,
+            `Early voting day` = if_else(days_out <= 12, 13 - days_out, NA),          # 12 days out = day 1 ... 5 days out = day 8
+            `2022 mail-in` = mail_2022, `2022 early in-person` = early_2022,
+            `2024 mail-in` = mail_2024, `2024 early in-person` = early_2024,
+            `2026 mail-in` = mail_2026, `2026 early in-person` = early_2026,
+            `2022 date (popup)` = date_2022, `2022 combined (popup)` = combined_2022, `2022 mail-in (popup)` = mail_2022, `2022 early in-person (popup)` = early_2022,
+            `2024 date (popup)` = date_2024, `2024 combined (popup)` = combined_2024, `2024 mail-in (popup)` = mail_2024, `2024 early in-person (popup)` = early_2024,
+            `2026 date (popup)` = date_2026, `2026 combined (popup)` = combined_2026, `2026 mail-in (popup)` = mail_2026, `2026 early in-person (popup)` = early_2026)
+
+# Stack them (Mail-in, then Early in-person, then Combined, each from 16 down to 5 days out), attach the shared columns,
+# and put the columns in the live chart's order (its Democratic/Republican/Other popup columns aren't used, so they're left out)
+early_voting_time_domain_graphic <- bind_rows(graphic_mail, graphic_early, graphic_combined) |>
+  left_join(popup_shared, by = c("Days before Election Day" = "days_out")) |>
+  relocate(`2026 vs 2022 (popup)`, `2026 vs 2024 (popup)`, `Measure (popup)`, `Measure key (popup)`, .after = last_col()) |>
+  relocate(`Days before Election Day`)   # Days first, then Measure: the order Flourish's bindings expect (Labels/time = A, Row filter = B)
+early_voting_time_domain_graphic
+
+write_csv(early_voting_time_domain_graphic, "output/early_voting_time_domain_graphic.csv", na = "")   # na = "" writes blanks as empty cells, not "NA"; save it for upload to Flourish
+```
+
+```{r}
+#fact check tables:
+methods_table
+methods_party_change_table
+cd_table
+mail_daily
+daily_wide
+
+#flourish tables
+voting_methods_flourish
+methods_party_change_flourish
+in_person_congressional_flourish
+early_voting_time_domain_graphic
+
+```
+
+

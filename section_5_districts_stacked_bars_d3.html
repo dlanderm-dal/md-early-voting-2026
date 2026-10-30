@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Congressional districts all see spike in early in-person voting</title>
+<!--
+  BUILD NOTES
+  D3 chart of early in-person votes by Maryland congressional district, 2022 vs. 2026 (Section 5).
+  Built Oct. 28, 2026 as a copy of table_1_stacked_bars_d3.html (the approved D3 rebuild of Flourish graphic 7),
+  standing in for the Flourish stacked-bar chart of the same district data. D3 7.9.0 (pinned, cdnjs). No buttons.
+  SYNCED Oct. 29, 2026 to Flourish visualisation 30730056, VERSION 47 (template 119604, "bar_stacked", one facet per district;
+    v47 has the same settings and data as v45, checked by re-extracting):
+    title and footer note copied from live; data refreshed from the R export (same counts as live, all 16 bars checked);
+    the live custom popup (popup.popup_custom_main) added, pasted unchanged: hover a bar segment, or tap on phones.
+    Popup card measured from live: white, 7px padding, 0.2rem corners, soft drop shadow (blur 5, y 2, 20%), content max 300px wide.
+    The popup is filled from the R export's already-formatted columns, so it shows what live meant to show:
+    live leaves {{Category}}, {{Year}} and {{As of}} blank (those columns aren't bound in Flourish) and drops the
+    "+", thousands commas and "%" from the vote-change and share-of-new-votes columns (live shows "8930" and "44").
+    POPUP = VERSION 4 (Oct. 29, per David's review page, mail_in_graphics.html "v-popup-g9-4"), not live v47's popup:
+      v4 adds the hovered-party box under the date line; the rest matches live v47's popup.
+    KEPT ON PURPOSE (live is wrong, or the D3 layout is the one David approved):
+    - subtitle: live says District 5 had "the largest spike" at 78.5%, but Districts 4 (94.5%), 6 (82.9%) and 8 (80.5%) rose more;
+    - x-axis title "Early in-person votes" (live: "Received Ballots", which is mail-in wording; these are in-person votes);
+    - source "early-voting reports" (live: "mail-in and early-voting reports"; Section 5 reads only the EarlyVoting RAW data files);
+    - the footer's sentence defining "Other" (not in live's footer; live has it only inside the popup, which statics don't show);
+    - fixed Democratic | Republican | Other stack order (live sorts each bar's segments largest-first, stack_sort "descending");
+    - thinner bars, party shares outside the bars, % change after each 2026 total, phone font sizes of 12px
+      (live drops to 10px text and 9px totals at 375px wide);
+    - live squashes the bars to 1px and draws "2022" on top of "2026" when its frame is short (seen at 700 x 650);
+      the D3 sets its own height, so that can't happen.
+    Checked Oct. 29 at 375, 768 and 1280px wide: no sideways scroll, no overlapping labels, popup on hover and tap,
+      popup stays on screen at 375px, no console errors. Axis title moved 4px lower so it clears the tick labels.
+  CHANGED Oct. 29 (David): party shares are no longer printed above/below the bars; they stay in the popup.
+    Popup still identical to live (checked byte for byte against live's popup_custom_main).
+  TEXT MATCHED TO LIVE Oct. 29 (David): live's rewritten subtitle, axis title "Received Ballots", and live's footer
+    (no "Other" sentence; source "mail-in and early-voting reports"). This replaces the "KEPT ON PURPOSE" text items below.
+  Kept from table_1_stacked_bars_d3.html: stack order Democratic | Republican | Other, CNS colors (Other #faa916),
+    party shares printed outside the bars (above 2022, below 2026, small neutral gray with a party-colored tick,
+    nudged so they never overlap), totals at each bar end, % change from 2022 after each 2026 total in CNS purple
+    (CHANGE_STYLE "number"; "arrow", "wedge" and "badge" still work via ?change=), no gridlines, flat axis labels,
+    phone sizes under 480px, redraw on resize, footer with the CNS logo, height posted to a parent iframe.
+  Changed for the districts: 8 panels (District 1 to District 8); shared x axis 0 to 80,000 (largest bar is
+    District 5 in 2026, 70,059), ticks every 20,000 (every 40,000 when the plot is narrow; "K" labels on phones);
+    axis title "Early in-person votes".
+  Text: headline and footer note from live Flourish v47. Subtitle, aria-label and the footer's "Other" sentence
+    are Claude's drafts (Oct. 28), kept because live's subtitle is factually wrong; every number checked against the data.
+  Font: Source Sans 3 (Flourish's Canva Sans Variable isn't free to load).
+  Re-synced Oct. 29 with live version 98: title, subtitle, footer, axis title and popup already matched; the only change
+    in Flourish was the data (Olszewski's name now has its quotes: John "Johnny O" Olszewski, Jr.). Inline data replaced
+    with in_person_congressional_flourish.csv (the fresh fact check, identical to live v98 plus one extra column,
+    "District vote change (popup)", that the popup doesn't use). Its popup numbers come wrapped in <span> (a Flourish
+    trick that keeps them as text); the D3 popup shows them the same.
+  Data: full_pia/output/in_person_congressional_flourish.csv (early_voting_factcheck_self.Rmd, graphic 9 export), inline below.
+    The bars use Category, Year and the Democratic / Republican / Other counts; the popup uses the "(popup)" columns,
+    Category, Year and As of, exactly as R formatted them.
+    To refresh after rerunning that chunk:
+    python3 -I ~/.claude/skills/flourishtod3/scripts/inject_data.py "section_5_districts_stacked_bars_d3.html" "full_pia/output/in_person_congressional_flourish.csv"
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<style>
+  :root {
+    --font: "Source Sans 3", system-ui, sans-serif;  /* layout.body_font (Flourish: Canva Sans Variable) */
+    --text: #333333;                                  /* measured: every text part is rgb(51,51,51) */
+    --bg: #ffffff;
+    --change: #80217f;                                /* CNS purple, same as the % change in graphics 2, 4 and 6 popups */
+    /* Desktop sizes, measured at 700px wide */
+    --title: 28px;     --title-lh: 1.2;               /* layout.title: 28px / 700 / 33.6px */
+    --subtitle: 19.6px; --subtitle-lh: 1.2;           /* layout.subtitle: 19.6px / 400 / 23.52px */
+    --base: 14px;                                     /* legend, panel titles, year labels, footer */
+  }
+  /* Phone sizes, measured at 375px wide (Flourish steps fonts down on small screens) */
+  @media (max-width: 480px) {
+    :root { --title: 20px; --subtitle: 14px; --base: 12px; }
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); }
+  .chart-wrap { padding: 11px; box-sizing: border-box; }                       /* measured 11px outer margin */
+  .chart-title { font-size: var(--title); line-height: var(--title-lh); font-weight: 700; margin: 0; }
+  .chart-subtitle { font-size: var(--subtitle); line-height: var(--subtitle-lh); font-weight: 400; margin: 2px 0 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--base); margin-bottom: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend i { width: 11px; height: 14px; border-radius: 3px; display: inline-block; }   /* measured swatch 11 x 14, radius 3 */
+  #chart { width: 100%; }
+  #chart svg { display: block; overflow: visible; }
+  #chart text { font-family: var(--font); fill: var(--text); }
+  .chart-footer { font-size: var(--base); line-height: 1.35; margin-top: 14px; }
+  .chart-footer a { color: inherit; }
+  .chart-footer i { display: block; margin-bottom: 4px; }
+  /* Popup card, measured from live Flourish v47: white, 7px padding, 0.2rem corners, drop shadow (blur 5, y 2, 20%) */
+  .tooltip {
+    position: absolute; left: 0; top: 0; display: none; pointer-events: none; z-index: 10;
+    background: #fff; border-radius: 0.2rem; padding: 7px; width: 300px; max-width: calc(100vw - 22px); box-sizing: content-box;  /* live content box: 300px + 7px padding a side (popup_width) */
+    box-shadow: 0 2px 10px rgba(0,0,0,.2); font-family: var(--font); text-align: start;
+  }
+  #chart rect.seg { cursor: pointer; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="chart-wrap">
+  <h1 class="chart-title">Congressional districts all see spike in early in-person voting</h1>
+  <p class="chart-subtitle">Early in-person voting is up 66% statewide as of a week before election day. District 4 had the largest spike with a 95% increase. While District 2, had a spike of 44%.</p>
+  <div class="legend" aria-hidden="true"></div>
+  <div id="chart" role="img" aria-label="Stacked bars comparing early in-person votes in 2022 and 2026, seven days before Election Day, by party, in each of Maryland's eight congressional districts. District 1: 41,952 in 2022 and 62,064 in 2026, up 47.9%. District 2: 32,605 and 46,939, up 44.0%. District 3: 32,854 and 53,135, up 61.7%. District 4: 18,687 and 36,348, up 94.5%. District 5: 39,243 and 70,059, up 78.5%. District 6: 24,491 and 44,784, up 82.9%. District 7: 19,908 and 30,138, up 51.4%. District 8: 25,127 and 45,356, up 80.5%. Statewide: 234,867 and 388,823, up 65.6%."></div>
+  <!-- Footer: note copied from live Flourish (layout.footer_note), Oct. 29 -->
+  <div class="chart-footer">
+    <i>Figures refer to votes collected seven days before Election Day in each cycle, Nov. 1, 2022 and Oct. 27, 2026</i>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 16px;margin-top:4px;">
+      <span>Chart: David Landerman <strong>·</strong> Source: <a href="https://elections.maryland.gov/press_room/index.html">Maryland State Board of Elections</a> mail-in and early-voting reports (2022 figures obtained through a public records request)</span>
+      <img src="https://public.flourish.studio/uploads/3120177/1a5a6109-c127-4a61-aa10-176316b318d0.png" alt="Capital News Service" style="height:18px;margin-left:auto;">
+    </div>
+  </div>
+</div>
+<div class="tooltip" role="status"></div>
+
+<!-- Popup: version 4 of graphic 9's popup (the text/plain block "v-popup-g9-4" in mail_in_graphics.html), pasted as-is.
+     It is live Flourish v47's popup plus a box for the hovered party (name in its color, 4px left border, big vote total,
+     "{share} of the district's votes"). {{Column name}} is filled from the hovered bar's row, using the R export's
+     formatted text (commas, +, %); {{SERIES}} is the hovered party (shows its box and highlights its row). -->
+<script type="text/plain" id="popup-template">
+<div class="{{SERIES}} y{{Year}}" style="max-width:300px; font-size:14px; line-height:1.35; color:#1a1a1a">
+  <style>
+    .g9d-row { display:flex; align-items:center; gap:6px; padding:1px 4px; border-radius:2px; font-size:12px; color:#555; }
+    .Democratic .g9d-dem, .Republican .g9d-rep, .Other .g9d-oth { background:#f4f4f0; color:#1a1a1a; font-weight:700; }
+    .g9h { display:none; }
+    .Democratic .g9h-dem, .Republican .g9h-rep, .Other .g9h-oth { display:flex; }
+  </style>
+  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding-bottom:6px; border-bottom:1px solid #e2e2dc"><span style="font-size:18px; font-weight:700; line-height:1.2">{{Category}}</span><span style="font-size:18px; font-weight:800; color:#80217f">{{Year}}</span></div>
+  <div style="margin-top:6px; font-size:12px; color:#555"><span style="white-space:nowrap">{{As of}} ·</span> <b style="color:#c71e1d; white-space:nowrap">Seven days before Election Day</b></div>
+
+  <!-- The hovered party's early in-person votes in this bar's year (only the hovered party's box shows) -->
+  <div class="g9h g9h-dem" style="align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:8px 10px; background:#f8f8f6; border-left:4px solid #1979b9; border-radius:4px">
+    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#1979b9">Democrats</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Democratic share (popup)}} of the</span> <span style="white-space:nowrap">district's votes</span></div></div>
+    <div style="flex:none; font-size:28px; line-height:1; font-weight:800; color:#1a1a1a; white-space:nowrap">{{Democratic (popup)}}</div>
+  </div>
+  <div class="g9h g9h-rep" style="align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:8px 10px; background:#f8f8f6; border-left:4px solid #c71e1d; border-radius:4px">
+    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#c71e1d">Republicans</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Republican share (popup)}} of the</span> <span style="white-space:nowrap">district's votes</span></div></div>
+    <div style="flex:none; font-size:28px; line-height:1; font-weight:800; color:#1a1a1a; white-space:nowrap">{{Republican (popup)}}</div>
+  </div>
+  <div class="g9h g9h-oth" style="align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:8px 10px; background:#f8f8f6; border-left:4px solid #faa916; border-radius:4px">
+    <div style="min-width:0"><div style="font-size:18px; font-weight:800; line-height:1.15; color:#faa916">Other</div><div style="font-size:12px; color:#555; margin-top:2px"><span style="white-space:nowrap">{{Other share (popup)}} of the</span> <span style="white-space:nowrap">district's votes</span></div></div>
+    <div style="flex:none; font-size:28px; line-height:1; font-weight:800; color:#1a1a1a; white-space:nowrap">{{Other (popup)}}</div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:10px; margin:8px 0 10px; padding:9px 10px; background:#f8f8f6; border-radius:6px">
+    <div style="flex:0 0 auto; text-align:center">
+      <div style="font-size:28px; line-height:1; font-weight:800; white-space:nowrap">{{District change (popup)}}</div>
+      <div style="font-size:12px; color:#555; margin-top:4px">vs. 2022</div>
+    </div>
+    <div style="flex:1; border-left:1px solid #e2e2dc; padding-left:10px; font-size:13px; color:#444; line-height:1.45">
+      <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; column-gap:8px"><span style="white-space:nowrap">{{As of 2022 (popup)}}</span><span style="margin-left:auto; white-space:nowrap; font-size:16px; font-weight:600; color:#555">{{District 2022 total (popup)}}</span></div>
+      <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; column-gap:8px"><span style="white-space:nowrap">{{As of 2026 (popup)}}</span><b style="margin-left:auto; white-space:nowrap; font-size:16px; color:#1a1a1a">{{District 2026 total (popup)}}</b></div>
+    </div>
+  </div>
+
+  <div style="margin-top:8px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555">Who cast the added votes</div>
+  <div style="margin:3px 0 4px">{{New votes bar (popup)}}</div>
+  <div class="g9d-row g9d-dem"><span style="flex:none; width:9px; height:9px; background:#1979b9; border-radius:1px"></span><span style="flex:1"><span style="color:#1979b9">Democrats</span></span><span style="white-space:nowrap">{{Democratic vote change (popup)}}</span><span style="width:32px; text-align:right">{{Democratic share of new votes (popup)}}</span></div>
+  <div class="g9d-row g9d-rep"><span style="flex:none; width:9px; height:9px; background:#c71e1d; border-radius:1px"></span><span style="flex:1"><span style="color:#c71e1d">Republicans</span></span><span style="white-space:nowrap">{{Republican vote change (popup)}}</span><span style="width:32px; text-align:right">{{Republican share of new votes (popup)}}</span></div>
+  <div class="g9d-row g9d-oth"><span style="flex:none; width:9px; height:9px; background:#faa916; border-radius:1px"></span><span style="flex:1"><span style="color:#faa916">Other</span></span><span style="white-space:nowrap">{{Other vote change (popup)}}</span><span style="width:32px; text-align:right">{{Other share of new votes (popup)}}</span></div>
+  <div style="margin-top:5px; font-size:11px; color:#666">"Other" = voters not registered as Democrats or Republicans.</div>
+  <div style="padding:7px 0 0; margin-top:9px; border-top:1px solid #e2e2dc; font-size:14px">
+    <div style="font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#555; margin-bottom:3px">On the 2026 ballot</div>
+    {{Candidates (popup)}}
+  </div>
+</div>
+</script>
+
+<!-- Data: one row per bar, from full_pia/output/flourish_section_5_congressional_stacked_bars.csv -->
+<script type="application/json" id="chart-data">
+[
+{
+"Bar": "2022",
+"Republican": "21618",
+"Democratic": "15032",
+"Other": "5302",
+"Category": "District 1",
+"Year": "2022",
+"Total": "41952",
+"Republican %": "51.5",
+"Democratic %": "35.8",
+"Other %": "12.6",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>21,618<\/span>",
+"Democratic (popup)": "<span>15,032<\/span>",
+"Other (popup)": "<span>5,302<\/span>",
+"Total (popup)": "<span>41,952<\/span>",
+"Republican share (popup)": "<span>51.5%<\/span>",
+"Democratic share (popup)": "<span>35.8%<\/span>",
+"Other share (popup)": "<span>12.6%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "Andrew P. Harris (Republican)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Dan Schwartz",
+"Republican candidate": "Andy Harris",
+"Other candidates on the ballot": "",
+"Write-in candidates": "Edward Shlikas (Unaffiliated)",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Dan Schwartz<\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Andy Harris <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+47.9%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>41,952<\/span>",
+"District 2026 total (popup)": "<span>62,064<\/span>",
+"Democratic vote change (popup)": "<span>+8,930<\/span>",
+"Republican vote change (popup)": "<span>+7,697<\/span>",
+"Other vote change (popup)": "<span>+3,485<\/span>",
+"Democratic share of new votes (popup)": "<span>44%<\/span>",
+"Republican share of new votes (popup)": "<span>38%<\/span>",
+"Other share of new votes (popup)": "<span>17%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:44.4%; background:#1979b9\"><\/div><div style=\"width:38.3%; background:#c71e1d\"><\/div><div style=\"width:17.3%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,112<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "29315",
+"Democratic": "23962",
+"Other": "8787",
+"Category": "District 1",
+"Year": "2026",
+"Total": "62064",
+"Republican %": "47.2",
+"Democratic %": "38.6",
+"Other %": "14.2",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>29,315<\/span>",
+"Democratic (popup)": "<span>23,962<\/span>",
+"Other (popup)": "<span>8,787<\/span>",
+"Total (popup)": "<span>62,064<\/span>",
+"Republican share (popup)": "<span>47.2%<\/span>",
+"Democratic share (popup)": "<span>38.6%<\/span>",
+"Other share (popup)": "<span>14.2%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+7,697<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-4.3 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+8,930<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+2.8 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+3,485<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.6 pts<\/b><\/div><\/div>",
+"Incumbent": "Andrew P. Harris (Republican)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Dan Schwartz",
+"Republican candidate": "Andy Harris",
+"Other candidates on the ballot": "",
+"Write-in candidates": "Edward Shlikas (Unaffiliated)",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Dan Schwartz<\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Andy Harris <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+47.9%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>41,952<\/span>",
+"District 2026 total (popup)": "<span>62,064<\/span>",
+"Democratic vote change (popup)": "<span>+8,930<\/span>",
+"Republican vote change (popup)": "<span>+7,697<\/span>",
+"Other vote change (popup)": "<span>+3,485<\/span>",
+"Democratic share of new votes (popup)": "<span>44%<\/span>",
+"Republican share of new votes (popup)": "<span>38%<\/span>",
+"Other share of new votes (popup)": "<span>17%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:44.4%; background:#1979b9\"><\/div><div style=\"width:38.3%; background:#c71e1d\"><\/div><div style=\"width:17.3%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,112<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "11541",
+"Democratic": "17152",
+"Other": "3912",
+"Category": "District 2",
+"Year": "2022",
+"Total": "32605",
+"Republican %": "35.4",
+"Democratic %": "52.6",
+"Other %": "12",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>11,541<\/span>",
+"Democratic (popup)": "<span>17,152<\/span>",
+"Other (popup)": "<span>3,912<\/span>",
+"Total (popup)": "<span>32,605<\/span>",
+"Republican share (popup)": "<span>35.4%<\/span>",
+"Democratic share (popup)": "<span>52.6%<\/span>",
+"Other share (popup)": "<span>12.0%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "John A. Olszewski Jr. (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "John \"Johnny O\" Olszewski, Jr.",
+"Republican candidate": "Dave Wallace",
+"Other candidates on the ballot": "",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; John \"Johnny O\" Olszewski, Jr. <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Dave Wallace<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+44.0%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>32,605<\/span>",
+"District 2026 total (popup)": "<span>46,939<\/span>",
+"Democratic vote change (popup)": "<span>+9,454<\/span>",
+"Republican vote change (popup)": "<span>+2,638<\/span>",
+"Other vote change (popup)": "<span>+2,242<\/span>",
+"Democratic share of new votes (popup)": "<span>66%<\/span>",
+"Republican share of new votes (popup)": "<span>18%<\/span>",
+"Other share of new votes (popup)": "<span>16%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:66.0%; background:#1979b9\"><\/div><div style=\"width:18.4%; background:#c71e1d\"><\/div><div style=\"width:15.6%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+14,334<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "14179",
+"Democratic": "26606",
+"Other": "6154",
+"Category": "District 2",
+"Year": "2026",
+"Total": "46939",
+"Republican %": "30.2",
+"Democratic %": "56.7",
+"Other %": "13.1",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>14,179<\/span>",
+"Democratic (popup)": "<span>26,606<\/span>",
+"Other (popup)": "<span>6,154<\/span>",
+"Total (popup)": "<span>46,939<\/span>",
+"Republican share (popup)": "<span>30.2%<\/span>",
+"Democratic share (popup)": "<span>56.7%<\/span>",
+"Other share (popup)": "<span>13.1%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+2,638<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-5.2 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+9,454<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+4.1 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+2,242<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.1 pts<\/b><\/div><\/div>",
+"Incumbent": "John A. Olszewski Jr. (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "John \"Johnny O\" Olszewski, Jr.",
+"Republican candidate": "Dave Wallace",
+"Other candidates on the ballot": "",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; John \"Johnny O\" Olszewski, Jr. <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Dave Wallace<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+44.0%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>32,605<\/span>",
+"District 2026 total (popup)": "<span>46,939<\/span>",
+"Democratic vote change (popup)": "<span>+9,454<\/span>",
+"Republican vote change (popup)": "<span>+2,638<\/span>",
+"Other vote change (popup)": "<span>+2,242<\/span>",
+"Democratic share of new votes (popup)": "<span>66%<\/span>",
+"Republican share of new votes (popup)": "<span>18%<\/span>",
+"Other share of new votes (popup)": "<span>16%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:66.0%; background:#1979b9\"><\/div><div style=\"width:18.4%; background:#c71e1d\"><\/div><div style=\"width:15.6%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+14,334<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "10439",
+"Democratic": "17054",
+"Other": "5361",
+"Category": "District 3",
+"Year": "2022",
+"Total": "32854",
+"Republican %": "31.8",
+"Democratic %": "51.9",
+"Other %": "16.3",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>10,439<\/span>",
+"Democratic (popup)": "<span>17,054<\/span>",
+"Other (popup)": "<span>5,361<\/span>",
+"Total (popup)": "<span>32,854<\/span>",
+"Republican share (popup)": "<span>31.8%<\/span>",
+"Democratic share (popup)": "<span>51.9%<\/span>",
+"Other share (popup)": "<span>16.3%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "Sarah K. Elfreth (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Sarah Elfreth",
+"Republican candidate": "Berney Flowers",
+"Other candidates on the ballot": "",
+"Write-in candidates": "Robert L. Coffman (Republican)",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Sarah Elfreth <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Berney Flowers<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+61.7%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>32,854<\/span>",
+"District 2026 total (popup)": "<span>53,135<\/span>",
+"Democratic vote change (popup)": "<span>+13,093<\/span>",
+"Republican vote change (popup)": "<span>+3,290<\/span>",
+"Other vote change (popup)": "<span>+3,898<\/span>",
+"Democratic share of new votes (popup)": "<span>65%<\/span>",
+"Republican share of new votes (popup)": "<span>16%<\/span>",
+"Other share of new votes (popup)": "<span>19%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:64.6%; background:#1979b9\"><\/div><div style=\"width:16.2%; background:#c71e1d\"><\/div><div style=\"width:19.2%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,281<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "13729",
+"Democratic": "30147",
+"Other": "9259",
+"Category": "District 3",
+"Year": "2026",
+"Total": "53135",
+"Republican %": "25.8",
+"Democratic %": "56.7",
+"Other %": "17.4",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>13,729<\/span>",
+"Democratic (popup)": "<span>30,147<\/span>",
+"Other (popup)": "<span>9,259<\/span>",
+"Total (popup)": "<span>53,135<\/span>",
+"Republican share (popup)": "<span>25.8%<\/span>",
+"Democratic share (popup)": "<span>56.7%<\/span>",
+"Other share (popup)": "<span>17.4%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+3,290<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-6.0 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+13,093<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+4.8 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+3,898<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.1 pts<\/b><\/div><\/div>",
+"Incumbent": "Sarah K. Elfreth (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Sarah Elfreth",
+"Republican candidate": "Berney Flowers",
+"Other candidates on the ballot": "",
+"Write-in candidates": "Robert L. Coffman (Republican)",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Sarah Elfreth <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Berney Flowers<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+61.7%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>32,854<\/span>",
+"District 2026 total (popup)": "<span>53,135<\/span>",
+"Democratic vote change (popup)": "<span>+13,093<\/span>",
+"Republican vote change (popup)": "<span>+3,290<\/span>",
+"Other vote change (popup)": "<span>+3,898<\/span>",
+"Democratic share of new votes (popup)": "<span>65%<\/span>",
+"Republican share of new votes (popup)": "<span>16%<\/span>",
+"Other share of new votes (popup)": "<span>19%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:64.6%; background:#1979b9\"><\/div><div style=\"width:16.2%; background:#c71e1d\"><\/div><div style=\"width:19.2%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,281<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "1032",
+"Democratic": "16387",
+"Other": "1268",
+"Category": "District 4",
+"Year": "2022",
+"Total": "18687",
+"Republican %": "5.5",
+"Democratic %": "87.7",
+"Other %": "6.8",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>1,032<\/span>",
+"Democratic (popup)": "<span>16,387<\/span>",
+"Other (popup)": "<span>1,268<\/span>",
+"Total (popup)": "<span>18,687<\/span>",
+"Republican share (popup)": "<span>5.5%<\/span>",
+"Democratic share (popup)": "<span>87.7%<\/span>",
+"Other share (popup)": "<span>6.8%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "Glenn F. Ivey (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Glenn F. Ivey",
+"Republican candidate": "George E. McDermott",
+"Other candidates on the ballot": "Sam Husseini (Green)",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Glenn F. Ivey <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; George E. McDermott<\/div><div><b style=\"color:#666666\">G<\/b>&nbsp; Sam Husseini<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+94.5%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>18,687<\/span>",
+"District 2026 total (popup)": "<span>36,348<\/span>",
+"Democratic vote change (popup)": "<span>+15,055<\/span>",
+"Republican vote change (popup)": "<span>+373<\/span>",
+"Other vote change (popup)": "<span>+2,233<\/span>",
+"Democratic share of new votes (popup)": "<span>85%<\/span>",
+"Republican share of new votes (popup)": "<span>2%<\/span>",
+"Other share of new votes (popup)": "<span>13%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:85.2%; background:#1979b9\"><\/div><div style=\"width:2.1%; background:#c71e1d\"><\/div><div style=\"width:12.6%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+17,661<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "1405",
+"Democratic": "31442",
+"Other": "3501",
+"Category": "District 4",
+"Year": "2026",
+"Total": "36348",
+"Republican %": "3.9",
+"Democratic %": "86.5",
+"Other %": "9.6",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>1,405<\/span>",
+"Democratic (popup)": "<span>31,442<\/span>",
+"Other (popup)": "<span>3,501<\/span>",
+"Total (popup)": "<span>36,348<\/span>",
+"Republican share (popup)": "<span>3.9%<\/span>",
+"Democratic share (popup)": "<span>86.5%<\/span>",
+"Other share (popup)": "<span>9.6%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+373<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-1.6 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+15,055<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-1.2 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+2,233<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+2.8 pts<\/b><\/div><\/div>",
+"Incumbent": "Glenn F. Ivey (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Glenn F. Ivey",
+"Republican candidate": "George E. McDermott",
+"Other candidates on the ballot": "Sam Husseini (Green)",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Glenn F. Ivey <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; George E. McDermott<\/div><div><b style=\"color:#666666\">G<\/b>&nbsp; Sam Husseini<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+94.5%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>18,687<\/span>",
+"District 2026 total (popup)": "<span>36,348<\/span>",
+"Democratic vote change (popup)": "<span>+15,055<\/span>",
+"Republican vote change (popup)": "<span>+373<\/span>",
+"Other vote change (popup)": "<span>+2,233<\/span>",
+"Democratic share of new votes (popup)": "<span>85%<\/span>",
+"Republican share of new votes (popup)": "<span>2%<\/span>",
+"Other share of new votes (popup)": "<span>13%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:85.2%; background:#1979b9\"><\/div><div style=\"width:2.1%; background:#c71e1d\"><\/div><div style=\"width:12.6%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+17,661<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "11830",
+"Democratic": "22996",
+"Other": "4417",
+"Category": "District 5",
+"Year": "2022",
+"Total": "39243",
+"Republican %": "30.1",
+"Democratic %": "58.6",
+"Other %": "11.3",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>11,830<\/span>",
+"Democratic (popup)": "<span>22,996<\/span>",
+"Other (popup)": "<span>4,417<\/span>",
+"Total (popup)": "<span>39,243<\/span>",
+"Republican share (popup)": "<span>30.1%<\/span>",
+"Democratic share (popup)": "<span>58.6%<\/span>",
+"Other share (popup)": "<span>11.3%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "Steny H. Hoyer (Democratic)",
+"Incumbent running": "No (open seat)",
+"Democratic candidate": "Adrian Boafo",
+"Republican candidate": "Chris Chaffee",
+"Other candidates on the ballot": "",
+"Write-in candidates": "Mildred Marie Hall (Other Candidates)",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Adrian Boafo<\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Chris Chaffee<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+78.5%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>39,243<\/span>",
+"District 2026 total (popup)": "<span>70,059<\/span>",
+"Democratic vote change (popup)": "<span>+22,200<\/span>",
+"Republican vote change (popup)": "<span>+3,912<\/span>",
+"Other vote change (popup)": "<span>+4,704<\/span>",
+"Democratic share of new votes (popup)": "<span>72%<\/span>",
+"Republican share of new votes (popup)": "<span>13%<\/span>",
+"Other share of new votes (popup)": "<span>15%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:72.0%; background:#1979b9\"><\/div><div style=\"width:12.7%; background:#c71e1d\"><\/div><div style=\"width:15.3%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+30,816<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "15742",
+"Democratic": "45196",
+"Other": "9121",
+"Category": "District 5",
+"Year": "2026",
+"Total": "70059",
+"Republican %": "22.5",
+"Democratic %": "64.5",
+"Other %": "13",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>15,742<\/span>",
+"Democratic (popup)": "<span>45,196<\/span>",
+"Other (popup)": "<span>9,121<\/span>",
+"Total (popup)": "<span>70,059<\/span>",
+"Republican share (popup)": "<span>22.5%<\/span>",
+"Democratic share (popup)": "<span>64.5%<\/span>",
+"Other share (popup)": "<span>13.0%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+3,912<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-7.6 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+22,200<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+5.9 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+4,704<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.7 pts<\/b><\/div><\/div>",
+"Incumbent": "Steny H. Hoyer (Democratic)",
+"Incumbent running": "No (open seat)",
+"Democratic candidate": "Adrian Boafo",
+"Republican candidate": "Chris Chaffee",
+"Other candidates on the ballot": "",
+"Write-in candidates": "Mildred Marie Hall (Other Candidates)",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Adrian Boafo<\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Chris Chaffee<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+78.5%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>39,243<\/span>",
+"District 2026 total (popup)": "<span>70,059<\/span>",
+"Democratic vote change (popup)": "<span>+22,200<\/span>",
+"Republican vote change (popup)": "<span>+3,912<\/span>",
+"Other vote change (popup)": "<span>+4,704<\/span>",
+"Democratic share of new votes (popup)": "<span>72%<\/span>",
+"Republican share of new votes (popup)": "<span>13%<\/span>",
+"Other share of new votes (popup)": "<span>15%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:72.0%; background:#1979b9\"><\/div><div style=\"width:12.7%; background:#c71e1d\"><\/div><div style=\"width:15.3%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+30,816<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "10378",
+"Democratic": "10339",
+"Other": "3774",
+"Category": "District 6",
+"Year": "2022",
+"Total": "24491",
+"Republican %": "42.4",
+"Democratic %": "42.2",
+"Other %": "15.4",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>10,378<\/span>",
+"Democratic (popup)": "<span>10,339<\/span>",
+"Other (popup)": "<span>3,774<\/span>",
+"Total (popup)": "<span>24,491<\/span>",
+"Republican share (popup)": "<span>42.4%<\/span>",
+"Democratic share (popup)": "<span>42.2%<\/span>",
+"Other share (popup)": "<span>15.4%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "April McClain Delaney (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "April McClain Delaney",
+"Republican candidate": "Robin Ficker",
+"Other candidates on the ballot": "Moshe Y. Landman (Green)",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; April McClain Delaney <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Robin Ficker<\/div><div><b style=\"color:#666666\">G<\/b>&nbsp; Moshe Y. Landman<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+82.9%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>24,491<\/span>",
+"District 2026 total (popup)": "<span>44,784<\/span>",
+"Democratic vote change (popup)": "<span>+11,344<\/span>",
+"Republican vote change (popup)": "<span>+4,751<\/span>",
+"Other vote change (popup)": "<span>+4,198<\/span>",
+"Democratic share of new votes (popup)": "<span>56%<\/span>",
+"Republican share of new votes (popup)": "<span>23%<\/span>",
+"Other share of new votes (popup)": "<span>21%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:55.9%; background:#1979b9\"><\/div><div style=\"width:23.4%; background:#c71e1d\"><\/div><div style=\"width:20.7%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,293<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "15129",
+"Democratic": "21683",
+"Other": "7972",
+"Category": "District 6",
+"Year": "2026",
+"Total": "44784",
+"Republican %": "33.8",
+"Democratic %": "48.4",
+"Other %": "17.8",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>15,129<\/span>",
+"Democratic (popup)": "<span>21,683<\/span>",
+"Other (popup)": "<span>7,972<\/span>",
+"Total (popup)": "<span>44,784<\/span>",
+"Republican share (popup)": "<span>33.8%<\/span>",
+"Democratic share (popup)": "<span>48.4%<\/span>",
+"Other share (popup)": "<span>17.8%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+4,751<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-8.6 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+11,344<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+6.2 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+4,198<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+2.4 pts<\/b><\/div><\/div>",
+"Incumbent": "April McClain Delaney (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "April McClain Delaney",
+"Republican candidate": "Robin Ficker",
+"Other candidates on the ballot": "Moshe Y. Landman (Green)",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; April McClain Delaney <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Robin Ficker<\/div><div><b style=\"color:#666666\">G<\/b>&nbsp; Moshe Y. Landman<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+82.9%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>24,491<\/span>",
+"District 2026 total (popup)": "<span>44,784<\/span>",
+"Democratic vote change (popup)": "<span>+11,344<\/span>",
+"Republican vote change (popup)": "<span>+4,751<\/span>",
+"Other vote change (popup)": "<span>+4,198<\/span>",
+"Democratic share of new votes (popup)": "<span>56%<\/span>",
+"Republican share of new votes (popup)": "<span>23%<\/span>",
+"Other share of new votes (popup)": "<span>21%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:55.9%; background:#1979b9\"><\/div><div style=\"width:23.4%; background:#c71e1d\"><\/div><div style=\"width:20.7%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,293<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "2273",
+"Democratic": "16244",
+"Other": "1391",
+"Category": "District 7",
+"Year": "2022",
+"Total": "19908",
+"Republican %": "11.4",
+"Democratic %": "81.6",
+"Other %": "7",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>2,273<\/span>",
+"Democratic (popup)": "<span>16,244<\/span>",
+"Other (popup)": "<span>1,391<\/span>",
+"Total (popup)": "<span>19,908<\/span>",
+"Republican share (popup)": "<span>11.4%<\/span>",
+"Democratic share (popup)": "<span>81.6%<\/span>",
+"Other share (popup)": "<span>7.0%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "Kweisi Mfume (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Kweisi Mfume",
+"Republican candidate": "Scott M. Collier",
+"Other candidates on the ballot": "",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Kweisi Mfume <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Scott M. Collier<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+51.4%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>19,908<\/span>",
+"District 2026 total (popup)": "<span>30,138<\/span>",
+"Democratic vote change (popup)": "<span>+8,076<\/span>",
+"Republican vote change (popup)": "<span>+837<\/span>",
+"Other vote change (popup)": "<span>+1,317<\/span>",
+"Democratic share of new votes (popup)": "<span>79%<\/span>",
+"Republican share of new votes (popup)": "<span>8%<\/span>",
+"Other share of new votes (popup)": "<span>13%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:78.9%; background:#1979b9\"><\/div><div style=\"width:8.2%; background:#c71e1d\"><\/div><div style=\"width:12.9%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+10,230<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "3110",
+"Democratic": "24320",
+"Other": "2708",
+"Category": "District 7",
+"Year": "2026",
+"Total": "30138",
+"Republican %": "10.3",
+"Democratic %": "80.7",
+"Other %": "9",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>3,110<\/span>",
+"Democratic (popup)": "<span>24,320<\/span>",
+"Other (popup)": "<span>2,708<\/span>",
+"Total (popup)": "<span>30,138<\/span>",
+"Republican share (popup)": "<span>10.3%<\/span>",
+"Democratic share (popup)": "<span>80.7%<\/span>",
+"Other share (popup)": "<span>9.0%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+837<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-1.1 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+8,076<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-0.9 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+1,317<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+2.0 pts<\/b><\/div><\/div>",
+"Incumbent": "Kweisi Mfume (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Kweisi Mfume",
+"Republican candidate": "Scott M. Collier",
+"Other candidates on the ballot": "",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Kweisi Mfume <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Scott M. Collier<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+51.4%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>19,908<\/span>",
+"District 2026 total (popup)": "<span>30,138<\/span>",
+"Democratic vote change (popup)": "<span>+8,076<\/span>",
+"Republican vote change (popup)": "<span>+837<\/span>",
+"Other vote change (popup)": "<span>+1,317<\/span>",
+"Democratic share of new votes (popup)": "<span>79%<\/span>",
+"Republican share of new votes (popup)": "<span>8%<\/span>",
+"Other share of new votes (popup)": "<span>13%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:78.9%; background:#1979b9\"><\/div><div style=\"width:8.2%; background:#c71e1d\"><\/div><div style=\"width:12.9%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+10,230<\/span>"
+},
+{
+"Bar": "2022",
+"Republican": "3374",
+"Democratic": "18033",
+"Other": "3720",
+"Category": "District 8",
+"Year": "2022",
+"Total": "25127",
+"Republican %": "13.4",
+"Democratic %": "71.8",
+"Other %": "14.8",
+"As of": "Nov. 1, 2022",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>3,374<\/span>",
+"Democratic (popup)": "<span>18,033<\/span>",
+"Other (popup)": "<span>3,720<\/span>",
+"Total (popup)": "<span>25,127<\/span>",
+"Republican share (popup)": "<span>13.4%<\/span>",
+"Democratic share (popup)": "<span>71.8%<\/span>",
+"Other share (popup)": "<span>14.8%<\/span>",
+"Republican change (popup)": "",
+"Democratic change (popup)": "",
+"Other change (popup)": "",
+"Incumbent": "Jamin B. (Jamie) Raskin (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Jamie Raskin",
+"Republican candidate": "Cheryl Riley",
+"Other candidates on the ballot": "Nancy Wallace (Green)",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Jamie Raskin <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Cheryl Riley<\/div><div><b style=\"color:#666666\">G<\/b>&nbsp; Nancy Wallace<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+80.5%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>25,127<\/span>",
+"District 2026 total (popup)": "<span>45,356<\/span>",
+"Democratic vote change (popup)": "<span>+15,287<\/span>",
+"Republican vote change (popup)": "<span>+1,187<\/span>",
+"Other vote change (popup)": "<span>+3,755<\/span>",
+"Democratic share of new votes (popup)": "<span>76%<\/span>",
+"Republican share of new votes (popup)": "<span>6%<\/span>",
+"Other share of new votes (popup)": "<span>19%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:75.6%; background:#1979b9\"><\/div><div style=\"width:5.9%; background:#c71e1d\"><\/div><div style=\"width:18.6%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,229<\/span>"
+},
+{
+"Bar": "2026",
+"Republican": "4561",
+"Democratic": "33320",
+"Other": "7475",
+"Category": "District 8",
+"Year": "2026",
+"Total": "45356",
+"Republican %": "10.1",
+"Democratic %": "73.5",
+"Other %": "16.5",
+"As of": "Oct. 27, 2026",
+"Early voting day": "Day 6 of 8",
+"Category (popup)": "Early in-person votes cast",
+"Republican (popup)": "<span>4,561<\/span>",
+"Democratic (popup)": "<span>33,320<\/span>",
+"Other (popup)": "<span>7,475<\/span>",
+"Total (popup)": "<span>45,356<\/span>",
+"Republican share (popup)": "<span>10.1%<\/span>",
+"Democratic share (popup)": "<span>73.5%<\/span>",
+"Other share (popup)": "<span>16.5%<\/span>",
+"Republican change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+1,187<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#de5826; white-space:nowrap\">-3.3 pts<\/b><\/div><\/div>",
+"Democratic change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+15,287<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.7 pts<\/b><\/div><\/div>",
+"Other change (popup)": "<div style=\"margin-top:8px; padding-top:7px; border-top:1px solid #e2e2dc; font-size:13px; color:#444\"><div style=\"font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#555; margin-bottom:2px\">Change from 2022<\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Votes<\/span><b style=\"color:#1a1a1a; white-space:nowrap\">+3,755<\/b><\/div><div style=\"display:flex; justify-content:space-between; gap:8px\"><span>Share of total<\/span><b style=\"color:#80217f; white-space:nowrap\">+1.7 pts<\/b><\/div><\/div>",
+"Incumbent": "Jamin B. (Jamie) Raskin (Democratic)",
+"Incumbent running": "Yes",
+"Democratic candidate": "Jamie Raskin",
+"Republican candidate": "Cheryl Riley",
+"Other candidates on the ballot": "Nancy Wallace (Green)",
+"Write-in candidates": "",
+"Candidates (popup)": "<div><b style=\"color:#1979b9\">D<\/b>&nbsp; Jamie Raskin <span style=\"font-size:11px; font-weight:700; color:#7a4f00; background:#fff4dc; padding:0 4px; border-radius:3px\">INCUMBENT<\/span><\/div><div><b style=\"color:#c71e1d\">R<\/b>&nbsp; Cheryl Riley<\/div><div><b style=\"color:#666666\">G<\/b>&nbsp; Nancy Wallace<\/div>",
+"District change (popup)": "<span style=\"color:#80217f; white-space:nowrap\">+80.5%<\/span>",
+"As of 2022 (popup)": "Nov. 1, 2022",
+"As of 2026 (popup)": "Oct. 27, 2026",
+"District 2022 total (popup)": "<span>25,127<\/span>",
+"District 2026 total (popup)": "<span>45,356<\/span>",
+"Democratic vote change (popup)": "<span>+15,287<\/span>",
+"Republican vote change (popup)": "<span>+1,187<\/span>",
+"Other vote change (popup)": "<span>+3,755<\/span>",
+"Democratic share of new votes (popup)": "<span>76%<\/span>",
+"Republican share of new votes (popup)": "<span>6%<\/span>",
+"Other share of new votes (popup)": "<span>19%<\/span>",
+"New votes bar (popup)": "<div style=\"display:flex; height:10px; border-radius:2px; overflow:hidden; background:#e2e2dc\"><div style=\"width:75.6%; background:#1979b9\"><\/div><div style=\"width:5.9%; background:#c71e1d\"><\/div><div style=\"width:18.6%; background:#faa916\"><\/div><\/div>",
+"District vote change (popup)": "<span>+20,229<\/span>"
+}
+]
+</script>
+
+<script>
+// ---- Settings (each copied from Flourish, or a labeled change) ----
+const SERIES = ["Democratic", "Republican", "Other"];            // live stack order, left to right (stack_sort: descending)
+const COLORS = { Republican: "#c71e1d", Democratic: "#1979b9", Other: "#faa916" };   // CNS red, CNS blue, CNS main orange-yellow #faa916 (David, Oct. 28; Other was #666666, too close to the gray totals)
+// How the % change from 2022 is drawn: "number" (after the 2026 total), "arrow" (growth arrow between the bars),
+// "wedge" (shaded slope between the bar ends) or "badge" (big, next to the panel title). Try one with ?change=arrow
+const CHANGE_STYLE = new URLSearchParams(location.search).get("change") || "number";
+const PANELS = d3.range(1, 9).map(n => `District ${n}`);        // facet = Category, District 1 to District 8
+const X_MAX = 80000;                                             // largest bar is District 5 in 2026 (70,059)
+const X_TITLE = "Received Ballots";                              // x.title, as live (Oct. 29: David asked for the text to match live)
+const fmtCount = d3.format(",");
+const fmtChange = d => (d > 0 ? "+" : d < 0 ? "−" : "") + d3.format(".1f")(Math.abs(d)) + "%";
+
+const rows = JSON.parse(document.getElementById("chart-data").textContent)
+  .map(r => {
+    const text = Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? "" : String(v)]));
+    return Object.assign(d3.autoType({ ...text }), { raw: text });   // raw: the text exactly as R wrote it, for the popup
+  });
+
+// ---- Popup (live Flourish custom popup) ----
+const popupTemplate = document.getElementById("popup-template").textContent.trim();
+const fillPopup = (r, series) => popupTemplate.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, k) =>
+  k === "SERIES" ? series : (r.raw[k] ?? ""));
+const tip = d3.select(".tooltip");
+function showTip(event, row, series) {
+  tip.html(fillPopup(row, series)).style("display", "block");
+  const t = tip.node().getBoundingClientRect(), pad = 12, edge = 4;
+  let x = event.pageX + pad, y = event.pageY + pad;
+  if (x + t.width > window.scrollX + innerWidth - edge) x = event.pageX - t.width - pad;   // keep it on screen
+  x = Math.max(window.scrollX + edge, Math.min(x, window.scrollX + innerWidth - t.width - edge));
+  if (y + t.height > window.scrollY + innerHeight - edge) y = event.pageY - t.height - pad;
+  y = Math.max(window.scrollY + edge, y);
+  tip.style("left", x + "px").style("top", y + "px");
+}
+const hideTip = () => tip.style("display", "none");
+// Phones: tapping anywhere that isn't a bar closes the popup
+document.addEventListener("click", e => { if (!(e.target instanceof SVGGeometryElement && e.target.classList.contains("seg"))) hideTip(); });
+rows.forEach(r => { r.total = d3.sum(SERIES, s => r[s]); });     // computed here, so the labels can't drift from the bars
+const byPanel = d3.group(rows, r => r.Category);
+// % change in each panel's total, 2022 to 2026 (shown after the 2026 total)
+const change = new Map(PANELS.map(p => {
+  const a = byPanel.get(p).find(r => r.Year === 2022), b = byPanel.get(p).find(r => r.Year === 2026);
+  return [p, (b.total - a.total) / a.total * 100];
+}));
+
+d3.select(".legend").selectAll("span").data(["Republican", "Democratic", "Other"]).join("span")   // legend order as published
+  .html(d => `<i style="background:${COLORS[d]}"></i>${d}`);
+
+// Text widths, for deciding what fits where
+const ctx = document.createElement("canvas").getContext("2d");
+const textW = (t, size, weight) => { ctx.font = `${weight} ${size}px "Source Sans 3", system-ui, sans-serif`; return ctx.measureText(t).width; };
+
+function draw() {
+  const host = d3.select("#chart");
+  const W = host.node().clientWidth;
+  const phone = W < 460;
+  const base = phone ? 12 : 14;                       // year labels and panel titles (measured 14px desktop)
+  const small = phone ? 11.5 : 12.6;                  // bar-end totals: measured 12.6px / 600
+  const barH = phone ? 26 : 30;                       // thinner than Flourish's 43px (David asked for thinner bars)
+  const inGap = CHANGE_STYLE === "arrow" || CHANGE_STYLE === "wedge";   // these draw the change between the two bars
+  const midGap = inGap ? (phone ? 22 : 26) : 8;       // space between the 2022 and 2026 bars
+  const labRow = 4;                                   // small gap above 2022 / below 2026 (party shares now only in the popup, Oct. 29)
+  const panelTitleH = CHANGE_STYLE === "badge" ? base + 20 : base + 8;
+  const panelGap = phone ? 18 : 22;                   // space between panels
+  const left = Math.ceil(textW("2026", base, 400)) + 10;   // room for the year labels
+  const endGap = 6;                                   // space between a bar's end and its total
+
+  // Bar-end labels: the total on every bar; with the "number" style the change follows the 2026 total.
+  // "arrow" and "wedge" put the change in the gap, just right of the 2026 bar's end.
+  rows.forEach(r => {
+    r.totalText = fmtCount(r.total);
+    r.changeText = r.Year === 2026 ? fmtChange(change.get(r.Category)) : "";
+    const totalW = textW(r.totalText, small, 600), changeW = r.changeText ? textW(r.changeText, small + 1, 700) : 0;
+    r.endW = CHANGE_STYLE === "number" ? totalW + (changeW ? 6 + changeW : 0)
+           : inGap ? Math.max(totalW, changeW) : totalW;
+  });
+  // Plot width: as wide as possible while every end label still fits inside the page
+  const avail = W - left - 2;
+  const lastTickHalf = textW(phone ? "80K" : fmtCount(X_MAX), base, 400) / 2 + 2;   // the last axis label is centered on the plot's end
+  const plotW = Math.min(avail - lastTickHalf, d3.min(rows, r => (avail - endGap - r.endW) * X_MAX / r.total));
+  const x = d3.scaleLinear().domain([0, X_MAX]).range([left, left + plotW]);
+
+  // Each bar's segments, left to right (party shares are no longer printed on the page; they're in the popup)
+  rows.forEach(r => {
+    let x0 = 0;
+    r.segs = SERIES.map(s => { const seg = { key: s, x0, x1: x0 + r[s] }; x0 += r[s]; return seg; });
+  });
+
+  // Lay out the panels top to bottom
+  let y = 0;
+  const layout = PANELS.map(p => {
+    const top = y, [r22, r26] = [2022, 2026].map(yr => byPanel.get(p).find(r => r.Year === yr));
+    y += panelTitleH + labRow;
+    const y22 = y; y += barH + midGap;
+    const y26 = y; y += barH + labRow;
+    const bottom = y; y += panelGap;
+    return { p, top, r22, r26, y22, y26, bottom };
+  });
+  const plotBottom = y - panelGap + 6;
+  const axisH = 26 + base + 10;                        // tick labels + axis title
+  const H = plotBottom + axisH;
+
+  host.selectAll("svg").remove();
+  const svg = host.append("svg").attr("width", W).attr("height", H);
+  svg.append("defs").append("marker").attr("id", "arrowhead").attr("viewBox", "0 0 10 10")
+    .attr("refX", 9).attr("refY", 5).attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto")
+    .append("path").attr("d", "M0,0 L10,5 L0,10 z").attr("fill", "var(--change)");
+
+  // No gridlines: David turned them off in Flourish (version 113: x.gridlines_visible and y.gridlines_visible false)
+
+  layout.forEach(L => {
+    const g = svg.append("g");
+    const title = g.append("text").attr("x", 0).attr("y", L.top + base + (CHANGE_STYLE === "badge" ? 6 : 0))
+      .attr("font-size", base).attr("font-weight", 600).text(L.p);          // panel title (measured 14px / 600)
+    const pct = fmtChange(change.get(L.p));
+
+    [[L.r22, L.y22, "above"], [L.r26, L.y26, "below"]].forEach(([r, by, side]) => {
+      g.append("text").attr("x", left - 10).attr("y", by + barH / 2).attr("dy", "0.35em")
+        .attr("text-anchor", "end").attr("font-size", base).text(r.Year);
+
+      g.append("g").selectAll("rect").data(r.segs).join("rect")
+        .attr("x", d => x(d.x0)).attr("width", d => Math.max(0, x(d.x1) - x(d.x0)))
+        .attr("y", by).attr("height", barH)
+        .attr("class", "seg")
+        .attr("fill", d => COLORS[d.key])
+        .attr("stroke", "#fff").attr("stroke-width", 1)                   // Flourish leaves a thin white gap between segments
+        .on("mousemove", (e, d) => showTip(e, r, d.key))                  // popup: hover a party's segment...
+        .on("mouseleave", hideTip)
+        .on("click", (e, d) => showTip(e, r, d.key));                     // ...or tap it on phones
+
+      const end = g.append("text").attr("x", x(r.total) + endGap).attr("y", by + barH / 2).attr("dy", "0.35em")
+        .attr("font-size", small);
+      end.append("tspan").attr("font-weight", 600).text(r.totalText);
+      if (CHANGE_STYLE === "number" && r.changeText) end.append("tspan").attr("dx", 6).attr("font-weight", 700).style("fill", "var(--change)").text(r.changeText);
+    });
+
+    const x22 = x(L.r22.total), x26 = x(L.r26.total), gapMid = L.y22 + barH + midGap / 2;
+    if (CHANGE_STYLE === "arrow") {
+      // Growth arrow: a dashed guide where 2022 ended, an arrow out to where 2026 ends, and the change at its tip
+      g.append("line").attr("x1", x22).attr("x2", x22).attr("y1", L.y22 + barH).attr("y2", L.y26)
+        .attr("stroke", "#999").attr("stroke-width", 1).attr("stroke-dasharray", "2,2");
+      g.append("line").attr("x1", x22).attr("x2", x26).attr("y1", gapMid).attr("y2", gapMid)
+        .attr("stroke", "var(--change)").attr("stroke-width", 2).attr("marker-end", "url(#arrowhead)");
+      g.append("text").attr("x", x26 + endGap).attr("y", gapMid).attr("dy", "0.35em")
+        .attr("font-size", small + 1).attr("font-weight", 700).style("fill", "var(--change)").text(pct);
+    } else if (CHANGE_STYLE === "wedge") {
+      // Growth wedge: a shaded slope from the end of the 2022 bar down to the end of the 2026 bar
+      g.append("path").attr("d", `M${x22},${L.y22 + barH} L${x22},${L.y26} L${x26},${L.y26} Z`)
+        .attr("fill", "var(--change)").attr("fill-opacity", 0.16);
+      g.append("line").attr("x1", x22).attr("x2", x26).attr("y1", L.y22 + barH).attr("y2", L.y26)
+        .attr("stroke", "var(--change)").attr("stroke-width", 1.5);
+      g.append("text").attr("x", x26 + endGap).attr("y", gapMid).attr("dy", "0.35em")
+        .attr("font-size", small + 1).attr("font-weight", 700).style("fill", "var(--change)").text(pct);
+    } else if (CHANGE_STYLE === "badge") {
+      // Badge: the change, big, next to the panel title
+      const tx = textW(L.p, base, 600) + 10;
+      const badge = g.append("text").attr("x", tx).attr("y", L.top + base + 6).style("fill", "var(--change)");
+      badge.append("tspan").attr("font-size", base * 1.45).attr("font-weight", 800).text(pct);
+      badge.append("tspan").attr("dx", 5).attr("font-size", base * 0.85).attr("font-weight", 400).style("fill", "#666").text("vs. 2022");
+    }
+  });
+
+  // Shared x axis at the bottom: flat labels, no tick marks, about 4 ticks (Flourish v113: tick_label_angle 0, tick_length 0, tick_number 4); fewer on phones
+  const tickStep = plotW < 380 ? 40000 : 20000;
+  const fmtTick = phone ? (d => d === 0 ? "0" : d3.format("~s")(d).replace("k", "K")) : fmtCount;
+  const axis = svg.append("g").attr("transform", `translate(0,${plotBottom})`)
+    .call(d3.axisBottom(x).tickValues(d3.range(0, X_MAX + 1, tickStep)).tickFormat(fmtTick).tickSize(0).tickPadding(6))
+    .call(a => a.select(".domain").remove());
+  axis.selectAll("text").attr("font-size", base).style("fill", "var(--text)");
+  svg.append("text").attr("x", x(0) + plotW / 2).attr("y", plotBottom + 26 + base)
+    .attr("text-anchor", "middle").attr("font-size", base * 1.1).attr("font-weight", 700).text(X_TITLE);   // x.title: measured 15.4px / 700
+}
+
+let lastW = 0;
+new ResizeObserver(() => { const w = document.getElementById("chart").clientWidth; if (w !== lastW) { lastW = w; draw(); } })
+  .observe(document.getElementById("chart"));
+if (document.fonts) document.fonts.ready.then(draw);   // re-measure label widths once the web font is in
+
+// Tell a parent page our height, so an <iframe> can size itself
+// (the content's own height, not the window's, so the frame can shrink as well as grow).
+// It also answers when the parent asks ({requestHeight: true}), in case the first message went out too early.
+const sendHeight = () => parent.postMessage({ chartHeight: Math.ceil(document.querySelector(".chart-wrap").getBoundingClientRect().height) }, "*");
+new ResizeObserver(sendHeight).observe(document.querySelector(".chart-wrap"));
+window.addEventListener("message", e => { if (e.data && e.data.requestHeight) sendHeight(); });
+</script>
+</body>
+</html>
